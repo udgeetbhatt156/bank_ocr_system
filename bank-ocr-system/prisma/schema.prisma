@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  password     String
+  name         String?
+  createdAt    DateTime      @default(now())
+  bankAccounts BankAccount[]
+}
+
+model BankAccount {
+  id            String        @id @default(cuid())
+  accountNumber String        @unique
+  bankName      String
+  accountHolder String?
+  createdAt     DateTime      @default(now())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  statements    Statement[]
+  transactions  Transaction[]
+}
+
+model Statement {
+  id           String        @id @default(cuid())
+  fileName     String
+  filePath     String
+  uploadedAt   DateTime      @default(now())
+  processedAt  DateTime?
+  status       String        @default("pending")
+  accountId    String
+  account      BankAccount   @relation(fields: [accountId], references: [id])
+  rawData      Json?
+  transactions Transaction[]
+}
+
+model Transaction {
+  id          String      @id @default(cuid())
+  date        DateTime
+  description String
+  debit       Decimal?
+  credit      Decimal?
+  balance     Decimal?
+  reference   String?
+  category    String?
+  confidence  Float?
+  accountId   String
+  statementId String
+  account     BankAccount @relation(fields: [accountId], references: [id])
+  statement   Statement   @relation(fields: [statementId], references: [id])
+  createdAt   DateTime    @default(now())
+}

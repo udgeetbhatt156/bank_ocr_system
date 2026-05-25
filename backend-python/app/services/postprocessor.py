@@ -15,7 +15,7 @@ import re
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-# ─── Current year used to fill in 2-part dates like "Jul 01" ────────────────
+# Current year used to fill in 2-part dates like "Jul 01" 
 _CURRENT_YEAR = datetime.now().year
 
 # Month abbreviation → number
@@ -26,7 +26,7 @@ _MONTH_MAP = {
 }
 
 
-# ─── Amount cleaning ─────────────────────────────────────────────────────────
+# Amount cleaning 
 
 def clean_amount(raw_value: str) -> Optional[float]:
     """
@@ -85,7 +85,7 @@ def clean_amount(raw_value: str) -> Optional[float]:
         return None
 
 
-# ─── Date parsing ─────────────────────────────────────────────────────────────
+# Date parsing
 
 def parse_date(raw_text: str) -> Optional[str]:
     """
@@ -108,7 +108,7 @@ def parse_date(raw_text: str) -> Optional[str]:
 
     s = raw_text.strip()
 
-    # ── 1. YYYY-MM-DD ────────────────────────────────────────────────────────
+    # 1. YYYY-MM-DD
     m = re.search(r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b', s)
     if m:
         try:
@@ -116,7 +116,7 @@ def parse_date(raw_text: str) -> Optional[str]:
         except ValueError:
             pass
 
-    # ── 2. DD/MM/YYYY or MM/DD/YYYY (4-digit year) ───────────────────────────
+    #  2. DD/MM/YYYY or MM/DD/YYYY (4-digit year) 
     m = re.search(r'\b(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})\b', s)
     if m:
         d1, d2, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -140,7 +140,7 @@ def parse_date(raw_text: str) -> Optional[str]:
                 except ValueError:
                     continue
 
-    # ── 3. DD/MM/YY or MM/DD/YY (2-digit year) ───────────────────────────────
+    #  3. DD/MM/YY or MM/DD/YY (2-digit year) 
     m = re.search(r'\b(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{2})\b', s)
     if m:
         d1, d2, yr2 = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -162,7 +162,7 @@ def parse_date(raw_text: str) -> Optional[str]:
                 except ValueError:
                     continue
 
-    # ── 4. "Jul 01" or "Jul 01, 2025"  (BMO Bank style) ─────────────────────
+    # 4. "Jul 01" or "Jul 01, 2025"  (BMO Bank style) 
     m = re.search(
         r'\b([A-Za-z]{3})\s+(\d{1,2})(?:[,\s]+(\d{4}))?\b', s
     )
@@ -177,7 +177,7 @@ def parse_date(raw_text: str) -> Optional[str]:
             except ValueError:
                 pass
 
-    # ── 5. "15-Jan-24" or "15-Jan-2024"  (DD-Mon-YY) ────────────────────────
+    # 5. "15-Jan-24" or "15-Jan-2024"  (DD-Mon-YY)
     m = re.search(r'\b(\d{1,2})-([A-Za-z]{3})-(\d{2,4})\b', s)
     if m:
         dy = int(m.group(1))
@@ -191,7 +191,7 @@ def parse_date(raw_text: str) -> Optional[str]:
             except ValueError:
                 pass
 
-    # ── 6. Short date "MM/DD" or "DD/MM" with no year ────────────────────────
+    # 6. Short date "MM/DD" or "DD/MM" with no year
     m = re.search(r'\b(\d{1,2})/(\d{1,2})\b', s)
     if m:
         d1, d2 = int(m.group(1)), int(m.group(2))
@@ -216,7 +216,7 @@ def parse_date(raw_text: str) -> Optional[str]:
     return None
 
 
-# ─── Debit / Credit classification ───────────────────────────────────────────
+# Debit / Credit classification 
 
 def classify_debit_credit(
     row: List[str],
@@ -234,7 +234,7 @@ def classify_debit_credit(
     debit: Optional[float] = None
     credit: Optional[float] = None
 
-    # ── Format 1: separate withdrawal + deposit columns ───────────────────────
+    # Format 1: separate withdrawal + deposit columns
     if 'debit' in col_map and 'credit' in col_map:
         w_idx = col_map['debit']
         d_idx = col_map['credit']
@@ -251,7 +251,7 @@ def classify_debit_credit(
 
         return debit, credit
 
-    # ── Format 2: single 'amount' column (signed) ────────────────────────────
+    # Format 2: single 'amount' column (signed)
     if 'amount' in col_map:
         a_idx = col_map['amount']
         raw_a = row[a_idx] if a_idx < len(row) else ''
@@ -263,7 +263,7 @@ def classify_debit_credit(
                 credit = val
         return debit, credit
 
-    # ── Format 3: scan all cells for signed amounts ───────────────────────────
+    # Format 3: scan all cells for signed amounts
     row_text = ' '.join(str(c) for c in row).upper()
     amounts = []
     for cell in row:
@@ -298,7 +298,7 @@ def classify_debit_credit(
     return debit, credit
 
 
-# ─── Confidence scoring ───────────────────────────────────────────────────────
+# Confidence scoring
 
 def calculate_confidence(transactions: List[Dict]) -> float:
     if not transactions:

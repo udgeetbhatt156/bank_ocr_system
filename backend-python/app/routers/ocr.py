@@ -26,7 +26,7 @@ router = APIRouter()
 LOGGER = logging.getLogger(__name__)
 
 
-# ─── File writer ─────────────────────────────────────────────────────────────
+#  File writer 
 
 async def write_file(upload_file: UploadFile, destination: Path) -> Path:
     async with aiofiles.open(destination, "wb") as f:
@@ -35,7 +35,7 @@ async def write_file(upload_file: UploadFile, destination: Path) -> Path:
     return destination
 
 
-# ─── Smart pdfplumber extraction ─────────────────────────────────────────────
+# Smart pdfplumber extraction 
 
 def extract_with_pdfplumber(file_path: Path) -> List[List[str]]:
     """
@@ -47,7 +47,7 @@ def extract_with_pdfplumber(file_path: Path) -> List[List[str]]:
 
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages:
-            # ── Try structured table extraction first ──────────────────────
+            #  Try structured table extraction first
             tables = page.extract_tables()
             if tables:
                 for table in tables:
@@ -57,7 +57,7 @@ def extract_with_pdfplumber(file_path: Path) -> List[List[str]]:
                             all_rows.append(cleaned)
                 continue  # page handled
 
-            # ── Fall back: reconstruct rows from word positions ────────────
+            # Fall back: reconstruct rows from word positions
             words = page.extract_words(
                 x_tolerance=3,
                 y_tolerance=3,
@@ -98,12 +98,12 @@ def extract_with_pdfplumber(file_path: Path) -> List[List[str]]:
     return all_rows
 
 
-# ─── Core processing pipeline ─────────────────────────────────────────────────
+# Core processing pipeline
 
 def process_single_statement(file_path: Path) -> StatementResult:
     warnings: List[str] = []
 
-    # ── Step 1: Detect PDF type ───────────────────────────────────────────────
+    # Step 1: Detect PDF type 
     suffix = file_path.suffix.lower()
     is_image = suffix in {'.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'}
 
@@ -114,7 +114,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
 
     LOGGER.info(f"[{file_path.name}] type={pdf_type}")
 
-    # ── Step 2: Extract rows ──────────────────────────────────────────────────
+    # Step 2: Extract Rows (digittal or OCR)
     rows: List[List[str]] = []
 
     if pdf_type == "digital":
@@ -146,7 +146,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
             raw_text=""
         )
 
-    # ── Step 3: Find header row ───────────────────────────────────────────────
+    # Step 3: Find header row
     header_idx = detect_header_row(rows)
     if header_idx is None:
         warnings.append("Header row not detected – using row 0")
@@ -156,7 +156,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
     data_rows  = rows[header_idx + 1:]
     LOGGER.info(f"[{file_path.name}] header={header_row}")
 
-    # ── Step 4: Map columns ───────────────────────────────────────────────────
+    # Step 4: Map columns 
     col_map = map_columns(header_row)
     LOGGER.info(f"[{file_path.name}] col_map={col_map}")
 
@@ -176,12 +176,12 @@ def process_single_statement(file_path: Path) -> StatementResult:
             raw_text=raw_text,
         )
 
-    # ── Step 5: Merge wrapped rows ────────────────────────────────────────────
+    #  Step 5: Merge wrapped rows 
     date_col = col_map.get('date')
     if date_col is not None:
         data_rows = merge_wrapped_rows(data_rows, date_col)
 
-    # ── Step 6: Parse transactions ────────────────────────────────────────────
+    # Step 6: Parse transactions
     transactions: List[Transaction] = []
     rows_processed = rows_with_dates = 0
 
@@ -229,7 +229,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
             source_line=" | ".join(str(c) for c in row),
         ))
 
-    # ── Step 7: Confidence + summary ─────────────────────────────────────────
+    # Step 7: Confidence + summary
     confidence = calculate_confidence([t.dict() for t in transactions])
     LOGGER.info(
         f"[{file_path.name}] rows={len(rows)} data={len(data_rows)} "
@@ -251,7 +251,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
     )
 
 
-# ─── Heuristic line parser (fallback when no header found) ───────────────────
+# Heuristic line parser (fallback when no header found)
 
 def _parse_lines_heuristic(rows: List[List[str]], filename: str) -> List[Transaction]:
     """
@@ -337,7 +337,7 @@ def _parse_lines_heuristic(rows: List[List[str]], filename: str) -> List[Transac
     return transactions
 
 
-# ─── API endpoint ─────────────────────────────────────────────────────────────
+# API endpoint 
 
 @router.post("/process", response_model=OCRResponse)
 async def process_documents(files: List[UploadFile] = File(...)):

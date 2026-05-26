@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import {
+  apiDeleteStatement,
   apiFetchStatement,
   apiFetchStatementList,
   type DocumentResult,
   type StatementListItem,
 } from "@/lib/api";
+import { useOcrStore } from "@/store/ocr-store";
 import { formatUSD } from "@/lib/currency";
 import { StatementDetailView } from "@/components/statement-detail-view";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,8 @@ import {
   RefreshCw,
   History,
   Upload,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -32,6 +36,7 @@ export default function HistoryPage() {
   const [selectedDoc, setSelectedDoc] = useState<DocumentResult | null>(null);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     setIsLoadingList(true);
@@ -96,6 +101,39 @@ export default function HistoryPage() {
 
   const selectedMeta = statements.find((s) => s.id === selectedId);
 
+  const handleDelete = async (id: string, fileName: string) => {
+    const confirmed = window.confirm(
+      `Delete "${fileName}"?\n\nThis will permanently remove the statement and all its transactions.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(id);
+    try {
+      await apiDeleteStatement(id);
+
+      setStatements((prev) => {
+        const next = prev.filter((s) => s.id !== id);
+        if (selectedId === id) {
+          setSelectedId(next[0]?.id ?? null);
+          setSelectedDoc(null);
+        }
+        return next;
+      });
+
+      useOcrStore.setState((state) => ({
+        documents: state.documents.filter((d) => d.id !== id),
+      }));
+
+      toast.success("Statement deleted");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete statement"
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -155,41 +193,61 @@ export default function HistoryPage() {
             <div className="max-h-[calc(100vh-220px)] space-y-2 overflow-y-auto pr-1">
               {statements.map((item) => {
                 const active = item.id === selectedId;
+                const isDeleting = deletingId === item.id;
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    onClick={() => setSelectedId(item.id)}
-                    className={`w-full rounded-xl border p-3 text-left transition-all ${
+                    className={`flex items-start gap-1 rounded-xl border p-1 transition-all ${
                       active
                         ? "border-primary/40 bg-primary/5 shadow-sm"
                         : "border-transparent bg-muted/30 hover:bg-muted/50"
                     }`}
                   >
-                    <div className="flex items-start gap-2">
-                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <FileText className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {item.fileName}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {format(new Date(item.uploadedAt), "MMM d, yyyy")}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <Badge variant="secondary" className="text-[10px]">
-                            {item.transactionCount} txns
-                          </Badge>
-                          {item.bankName && (
-                            <Badge variant="outline" className="text-[10px]">
-                              {item.bankName}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(item.id)}
+                      className="min-w-0 flex-1 rounded-lg p-2 text-left"
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                          <FileText className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {item.fileName}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {format(new Date(item.uploadedAt), "MMM d, yyyy")}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <Badge variant="secondary" className="text-[10px]">
+                              {item.transactionCount} txns
                             </Badge>
-                          )}
+                            {item.bankName && (
+                              <Badge variant="outline" className="text-[10px]">
+                                {item.bankName}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="mt-1 h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      disabled={isDeleting}
+                      aria-label={`Delete ${item.fileName}`}
+                      onClick={() => handleDelete(item.id, item.fileName)}
+                    >
+                      {isDeleting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                 );
               })}
             </div>
@@ -208,18 +266,36 @@ export default function HistoryPage() {
                     {selectedMeta.bankName ? ` · ${selectedMeta.bankName}` : ""}
                   </p>
                 </div>
-                {selectedMeta.fileUrl && (
-                  <Button variant="outline" size="sm" className="gap-2" asChild>
-                    <a
-                      href={selectedMeta.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      View PDF
-                    </a>
+                <div className="flex gap-2">
+                  {selectedMeta.fileUrl && (
+                    <Button variant="outline" size="sm" className="gap-2" asChild>
+                      <a
+                        href={selectedMeta.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        View PDF
+                      </a>
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={deletingId === selectedMeta.id}
+                    onClick={() =>
+                      handleDelete(selectedMeta.id, selectedMeta.fileName)
+                    }
+                  >
+                    {deletingId === selectedMeta.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    Delete
                   </Button>
-                )}
+                </div>
               </div>
             )}
 

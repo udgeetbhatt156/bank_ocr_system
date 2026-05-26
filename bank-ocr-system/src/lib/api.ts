@@ -178,3 +178,9 @@ export async function apiFetchStatement(id: string): Promise<{
 }> {
   return request<{ document: DocumentResult }>(`/api/statements/${id}`);
 }
+
+export async function apiDeleteStatement(id: string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/api/statements/${id}`, {
+    method: "DELETE",
+  });
+}

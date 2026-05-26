@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import path from "path";
 import { promises as fs } from "fs";
 
@@ -20,8 +19,78 @@ export type OcrDocumentPayload = {
   current_balance?: number | null;
 };
 
+/** OCR metadata stored in Statement.rawData (works even if Prisma client is stale) */
+type StoredStatementMeta = {
+  raw_text: string;
+  warnings: string[];
+  confidence?: number | null;
+  pdf_type?: string | null;
+  bank_name?: string | null;
+  account_number?: string | null;
+  customer_number?: string | null;
+  current_balance?: number | null;
+};
+
+type StatementWithRelations = {
+  id: string;
+  fileName: string;
+  filePath: string;
+  uploadedAt: Date;
+  processedAt: Date | null;
+  status: string;
+  rawData: unknown;
+  account: {
+    bankName: string;
+    accountNumber: string;
+    customerNumber?: string | null;
+  };
+  transactions: Array<{
+    date: Date;
+    description: string;
+    debit: unknown;
+    credit: unknown;
+    balance: unknown;
+    reference: string | null;
+    sourceLine?: string | null;
+  }>;
+};
+
 function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9_.-]/g, "-");
+}
+
+function buildRawData(doc: OcrDocumentPayload): StoredStatementMeta {
+  return {
+    raw_text: doc.raw_text ?? "",
+    warnings: doc.warnings ?? [],
+    confidence: doc.confidence ?? null,
+    pdf_type: doc.pdf_type ?? null,
+    bank_name: doc.bank_name ?? null,
+    account_number: doc.account_number ?? null,
+    customer_number: doc.customer_number ?? null,
+    current_balance: doc.current_balance ?? null,
+  };
+}
+
+function parseStoredMeta(
+  rawData: unknown,
+  account?: { bankName: string; accountNumber: string; customerNumber?: string | null }
+) {
+  const meta =
+    rawData && typeof rawData === "object"
+      ? (rawData as Partial<StoredStatementMeta>)
+      : {};
+
+  return {
+    raw_text: meta.raw_text ?? "",
+    bank_name: meta.bank_name ?? account?.bankName ?? null,
+    account_number: meta.account_number ?? account?.accountNumber ?? null,
+    customer_number: meta.customer_number ?? account?.customerNumber ?? null,
+    current_balance:
+      meta.current_balance != null ? Number(meta.current_balance) : null,
+    confidence: meta.confidence ?? null,
+    pdf_type: meta.pdf_type ?? null,
+  };
 }
 
 export function parseOcrDate(value: string | null | undefined): Date {
@@ -41,7 +110,9 @@ export function parseOcrDate(value: string | null | undefined): Date {
 
   const monthDay = value.match(/^([A-Za-z]{3})\s+(\d{1,2})(?:,?\s*(\d{4}))?$/);
   if (monthDay) {
-    const parsed = new Date(`${monthDay[1]} ${monthDay[2]}, ${monthDay[3] || new Date().getFullYear()}`);
+    const parsed = new Date(
+      `${monthDay[1]} ${monthDay[2]}, ${monthDay[3] || new Date().getFullYear()}`
+    );
     if (!isNaN(parsed.getTime())) return parsed;
   }
 
@@ -57,9 +128,12 @@ function formatDateForClient(date: Date): string {
 
 function decimalOrNull(value: number | string | null | undefined) {
   if (value === null || value === undefined || value === "") return null;
-  const num = typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
+  const num =
+    typeof value === "number"
+      ? value
+      : Number(String(value).replace(/,/g, ""));
   if (Number.isNaN(num)) return null;
-  return new Prisma.Decimal(num);
+  return num;
 }
 
 export async function saveUploadedFile(
@@ -80,7 +154,8 @@ export async function persistOcrDocument(
   doc: OcrDocumentPayload,
   fileBuffer: Buffer
 ) {
-  const accountNumber = doc.account_number?.trim() || `account-${userId.slice(0, 8)}`;
+  const accountNumber =
+    doc.account_number?.trim() || `account-${userId.slice(0, 8)}`;
   const bankName = doc.bank_name?.trim() || "Unknown Bank";
 
   const existingAccount = await prisma.bankAccount.findFirst({
@@ -90,19 +165,13 @@ export async function persistOcrDocument(
   const account = existingAccount
     ? await prisma.bankAccount.update({
         where: { id: existingAccount.id },
-        data: {
-          bankName,
-          ...(doc.customer_number != null
-            ? { customerNumber: doc.customer_number }
-            : {}),
-        },
+        data: { bankName },
       })
     : await prisma.bankAccount.create({
         data: {
           userId,
           accountNumber,
           bankName,
-          customerNumber: doc.customer_number ?? null,
         },
       });
 
@@ -118,16 +187,7 @@ export async function persistOcrDocument(
     fileName: doc.filename,
     processedAt: new Date(),
     status: doc.transactions.length > 0 ? "processed" : "failed",
-    confidence: doc.confidence ?? null,
-    pdfType: doc.pdf_type ?? null,
-    bankName: doc.bank_name ?? null,
-    accountNumber: doc.account_number ?? null,
-    customerNumber: doc.customer_number ?? null,
-    currentBalance: decimalOrNull(doc.current_balance),
-    rawData: {
-      raw_text: doc.raw_text ?? "",
-      warnings: doc.warnings ?? [],
-    },
+    rawData: buildRawData(doc),
     accountId: account.id,
   };
 
@@ -163,7 +223,9 @@ export async function persistOcrDocument(
     data: { filePath },
   });
 
-  await prisma.transaction.deleteMany({ where: { statementId: statement.id } });
+  await prisma.transaction.deleteMany({
+    where: { statementId: statement.id },
+  });
 
   if (doc.transactions.length > 0) {
     await prisma.transaction.createMany({
@@ -175,8 +237,7 @@ export async function persistOcrDocument(
         debit: decimalOrNull(t.debit),
         credit: decimalOrNull(t.credit),
         balance: decimalOrNull(t.balance),
-        reference: t.reference,
-        sourceLine: t.source_line ?? "",
+        reference: t.reference || t.source_line || null,
       })),
     });
   }
@@ -184,46 +245,35 @@ export async function persistOcrDocument(
   return statement.id;
 }
 
-type StatementWithRelations = Prisma.StatementGetPayload<{
-  include: {
-    transactions: { orderBy: { date: "asc" } };
-    account: true;
-  };
-}>;
-
 export function statementToDocumentResult(
   statement: StatementWithRelations
 ): DocumentResult {
+  const meta = parseStoredMeta(statement.rawData, statement.account);
+
   return {
     id: statement.id,
     filename: statement.fileName,
     fileUrl: `/api/statements/${statement.id}/file`,
-    raw_text:
-      typeof statement.rawData === "object" &&
-      statement.rawData !== null &&
-      "raw_text" in statement.rawData
-        ? String((statement.rawData as { raw_text?: string }).raw_text ?? "")
-        : "",
-    bank_name: statement.bankName,
-    account_number: statement.accountNumber ?? statement.account.accountNumber,
-    customer_number:
-      statement.customerNumber ?? statement.account.customerNumber,
-    current_balance: statement.currentBalance
-      ? Number(statement.currentBalance)
-      : null,
+    raw_text: meta.raw_text,
+    bank_name: meta.bank_name,
+    account_number: meta.account_number,
+    customer_number: meta.customer_number,
+    current_balance: meta.current_balance,
     transactions: statement.transactions.map((t) => ({
       date: formatDateForClient(t.date),
       description: t.description,
-      debit: t.debit ? Number(t.debit) : null,
-      credit: t.credit ? Number(t.credit) : null,
-      balance: t.balance ? Number(t.balance) : null,
+      debit: t.debit != null ? Number(t.debit) : null,
+      credit: t.credit != null ? Number(t.credit) : null,
+      balance: t.balance != null ? Number(t.balance) : null,
       reference: t.reference,
-      source_line: t.sourceLine ?? "",
+      source_line: t.sourceLine ?? t.reference ?? "",
     })),
   };
 }
 
-export async function fetchUserDocuments(userId: string): Promise<DocumentResult[]> {
+export async function fetchUserDocuments(
+  userId: string
+): Promise<DocumentResult[]> {
   const statements = await prisma.statement.findMany({
     where: { account: { userId } },
     include: {
@@ -233,7 +283,9 @@ export async function fetchUserDocuments(userId: string): Promise<DocumentResult
     orderBy: { uploadedAt: "desc" },
   });
 
-  return statements.map(statementToDocumentResult);
+  return statements.map((s: StatementWithRelations) =>
+    statementToDocumentResult(s)
+  );
 }
 
 export async function getStatementForUser(statementId: string, userId: string) {
@@ -244,6 +296,31 @@ export async function getStatementForUser(statementId: string, userId: string) {
       account: true,
     },
   });
+}
+
+export async function deleteStatementForUser(
+  statementId: string,
+  userId: string
+): Promise<boolean> {
+  const statement = await getStatementForUser(statementId, userId);
+  if (!statement) return false;
+
+  await prisma.statement.delete({ where: { id: statement.id } });
+
+  try {
+    await fs.unlink(statement.filePath);
+  } catch {
+    /* file may already be missing */
+  }
+
+  try {
+    const uploadDir = path.dirname(statement.filePath);
+    await fs.rm(uploadDir, { recursive: true, force: true });
+  } catch {
+    /* ignore directory cleanup errors */
+  }
+
+  return true;
 }
 
 export type StatementListItem = {
@@ -274,7 +351,8 @@ export async function fetchUserStatementList(
     orderBy: { uploadedAt: "desc" },
   });
 
-  return statements.map((s) => {
+  return statements.map((s: StatementWithRelations) => {
+    const meta = parseStoredMeta(s.rawData, s.account);
     let totalCredits = 0;
     let totalDebits = 0;
     for (const t of s.transactions) {
@@ -288,10 +366,10 @@ export async function fetchUserStatementList(
       uploadedAt: s.uploadedAt.toISOString(),
       processedAt: s.processedAt?.toISOString() ?? null,
       status: s.status,
-      bankName: s.bankName ?? s.account.bankName,
-      accountNumber: s.accountNumber ?? s.account.accountNumber,
-      customerNumber: s.customerNumber ?? s.account.customerNumber,
-      currentBalance: s.currentBalance ? Number(s.currentBalance) : null,
+      bankName: meta.bank_name,
+      accountNumber: meta.account_number,
+      customerNumber: meta.customer_number,
+      currentBalance: meta.current_balance,
       transactionCount: s.transactions.length,
       totalCredits,
       totalDebits,

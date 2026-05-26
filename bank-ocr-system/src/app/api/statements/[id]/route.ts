@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getAuthUser } from "@/lib/auth-server";
 import {
+  deleteStatementForUser,
   getStatementForUser,
   statementToDocumentResult,
 } from "@/lib/statements";
@@ -22,7 +23,9 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   return NextResponse.json({
-    document: statementToDocumentResult(statement),
+    document: statementToDocumentResult(
+      statement as Parameters<typeof statementToDocumentResult>[0]
+    ),
   });
 }
 
@@ -33,20 +36,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
 
   const { id } = await context.params;
-  const statement = await getStatementForUser(id, user.id);
+  const deleted = await deleteStatementForUser(id, user.id);
 
-  if (!statement) {
+  if (!deleted) {
     return NextResponse.json({ error: "Statement not found" }, { status: 404 });
-  }
-
-  const { prisma } = await import("@/lib/prisma");
-  await prisma.statement.delete({ where: { id: statement.id } });
-
-  try {
-    const { promises: fs } = await import("fs");
-    await fs.unlink(statement.filePath);
-  } catch {
-    /* ignore */
   }
 
   return NextResponse.json({ success: true });

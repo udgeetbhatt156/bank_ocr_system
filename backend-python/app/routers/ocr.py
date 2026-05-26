@@ -16,7 +16,12 @@ from app.core.config import UPLOAD_DIR
 from app.models.schemas import OCRResponse, StatementResult, Transaction
 from app.services.ingestion import detect_pdf_type
 from app.services.preprocessor import preprocess_scanned_pdf
-from app.services.ocr_engine import extract_digital_pdf, run_paddleocr_structure, parse_ocr_text_to_rows
+from app.services.ocr_engine import (
+    extract_digital_pdf,
+    extract_ocr_rows,
+    run_paddleocr_structure,
+    parse_ocr_text_to_rows,
+)
 from app.services.table_parser import map_columns, merge_wrapped_rows, detect_header_row
 from app.services.postprocessor import (
     clean_amount, parse_date, classify_debit_credit, calculate_confidence
@@ -128,11 +133,15 @@ def process_single_statement(file_path: Path) -> StatementResult:
 
     if pdf_type == "scanned" or not rows:
         try:
-            images = preprocess_scanned_pdf(file_path, dpi=300)
+            images = preprocess_scanned_pdf(file_path, dpi=120)
             for img in images:
-                text = run_paddleocr_structure(img)
-                if text:
-                    rows.extend(parse_ocr_text_to_rows(text))
+                ocr_rows = extract_ocr_rows(img)
+                if ocr_rows:
+                    rows.extend(ocr_rows)
+                else:
+                    text = run_paddleocr_structure(img)
+                    if text:
+                        rows.extend(parse_ocr_text_to_rows(text))
             LOGGER.info(f"[{file_path.name}] OCR → {len(rows)} rows")
         except Exception as e:
             LOGGER.error(f"OCR failed: {e}")
@@ -144,6 +153,19 @@ def process_single_statement(file_path: Path) -> StatementResult:
             confidence=0.0, pdf_type=pdf_type,
             warnings=warnings + ["No data extracted from document"],
             raw_text=""
+        )
+
+    add_sub_transactions = _parse_additions_subtractions_rows(rows)
+    if add_sub_transactions:
+        confidence = calculate_confidence([t.dict() for t in add_sub_transactions])
+        raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
+        return StatementResult(
+            filename=file_path.name,
+            transactions=add_sub_transactions,
+            confidence=confidence,
+            pdf_type=pdf_type,
+            warnings=warnings,
+            raw_text=raw_text,
         )
 
     # Step 3: Find header row
@@ -161,7 +183,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
     LOGGER.info(f"[{file_path.name}] col_map={col_map}")
 
     if not col_map:
-        warnings.append("Column mapping failed – attempting line-by-line parse")
+        warnings.append("Column mapping failed attempting line-by-line parse")
         # Fall back to line-by-line heuristic parse
         transactions = _parse_lines_heuristic(data_rows, file_path.name)
         confidence = calculate_confidence([t.dict() for t in transactions])
@@ -332,6 +354,70 @@ def _parse_lines_heuristic(rows: List[List[str]], filename: str) -> List[Transac
             balance=balance,
             reference=None,
             source_line=full_line,
+        ))
+
+    return transactions
+
+
+def _parse_additions_subtractions_rows(rows: List[List[str]]) -> List[Transaction]:
+    transactions: List[Transaction] = []
+    in_activity_table = False
+
+    for row in rows:
+        row_text = " ".join(str(c) for c in row).strip()
+        row_lower = row_text.lower()
+
+        has_add_sub_header = (
+            "date" in row_lower
+            and "description" in row_lower
+            and "additions" in row_lower
+            and "subtractions" in row_lower
+        )
+        if has_add_sub_header:
+            in_activity_table = True
+            continue
+
+        if in_activity_table and (
+            "daily balance" in row_lower
+            or "checks in number" in row_lower
+            or "deposits and other" in row_lower
+        ):
+            in_activity_table = False
+
+        if not in_activity_table or not row:
+            continue
+
+        date_str = parse_date(str(row[0]))
+        if not date_str:
+            if transactions and row_text:
+                previous = transactions[-1]
+                previous.description = f"{previous.description} {row_text}".strip()
+                previous.source_line = f"{previous.source_line} | {row_text}"
+            continue
+
+        description = str(row[1]).strip() if len(row) > 1 else row_text
+        credit = clean_amount(str(row[2])) if len(row) > 2 else None
+        debit = clean_amount(str(row[3])) if len(row) > 3 else None
+
+        if credit is not None and credit < 0:
+            debit = abs(credit)
+            credit = None
+        if debit is not None:
+            debit = abs(debit)
+        if credit is not None:
+            credit = abs(credit)
+
+        if debit is None and credit is None:
+            continue
+
+        transactions.append(Transaction(
+            date=date_str,
+            description=description or row_text,
+            debit=debit,
+            credit=credit,
+            balance=None,
+            reference=None,
+            source_line=" | ".join(str(c) for c in row),
         ))
 
     return transactions

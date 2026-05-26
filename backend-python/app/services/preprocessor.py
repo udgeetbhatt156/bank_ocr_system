@@ -93,18 +93,10 @@ def preprocess_scanned_pdf(file_path: Path, dpi: int = 300) -> List[np.ndarray]:
         # Convert PIL to OpenCV format
         img = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
         
-        # Step 1: Deskew
+        # Step 1: Deskew. PaddleOCR performs best on the natural page image;
+        # aggressive denoise/threshold filters can collapse table geometry.
         img = deskew_image(img)
-        
-        # Step 2: Denoise
-        img = denoise_image(img)
-        
-        # Step 3: CLAHE for contrast enhancement
-        img = apply_clahe(img)
-        
-        # Step 4: Sauvola binarization (better than Otsu for bank statements)
-        img = apply_sauvola_threshold(img)
-        
+
         processed_images.append(img)
     
     return processed_images

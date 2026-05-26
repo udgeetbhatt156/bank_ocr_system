@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     console.log(`[OCR Proxy] Forwarding to: ${PYTHON_OCR_URL}/api/ocr/process`);
     const response = await axios.post(`${PYTHON_OCR_URL}/api/ocr/process`, upstreamForm, {
       headers: upstreamForm.getHeaders(),
-      timeout: 120_000,
+      timeout: 600_000,
     });
 
     console.log("[OCR Proxy] Success! Received response from Python service");

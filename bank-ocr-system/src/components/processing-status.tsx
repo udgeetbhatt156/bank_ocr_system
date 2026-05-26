@@ -6,7 +6,14 @@ import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, Loader2, AlertCircle, Clock } from "lucide-react";
 
 export function ProcessingStatus() {
-  const { files, uploadProgress, isProcessing } = useOcrStore();
+  const {
+    files,
+    uploadProgress,
+    isProcessing,
+    elapsedSeconds,
+    estimatedSeconds,
+    processingMessage,
+  } = useOcrStore();
 
   if (files.length === 0) return null;
 
@@ -53,11 +60,21 @@ export function ProcessingStatus() {
 
       {/* Overall progress bar */}
       {isProcessing && (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <Progress value={uploadProgress} className="h-2" />
-          <p className="text-right text-xs text-muted-foreground">
-            {uploadProgress}% uploaded
-          </p>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              Elapsed {formatDuration(elapsedSeconds)}
+              {estimatedSeconds ? ` · Est. ${formatDuration(estimatedSeconds)}` : ""}
+            </span>
+            <span>{uploadProgress}% uploaded</span>
+          </div>
+          {processingMessage && (
+            <div className="flex items-start gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-primary">
+              <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{processingMessage}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -78,4 +95,12 @@ export function ProcessingStatus() {
       )}
     </motion.div>
   );
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds}s`;
+  if (seconds === 0) return `${minutes}m`;
+  return `${minutes}m ${seconds}s`;
 }

@@ -34,7 +34,7 @@ def clean_amount(raw_value: str) -> Optional[float]:
 
     Handles:
       $1,234.56  -$700.00  ₹1,234.56  1,234.56 Dr  1234.56 Cr
-      (1,234.56)  +1234    1.234,56 (European)
+      (1,234.56)  +1234    $1,234.56-  1.234,56 (European)
     Returns the absolute value (sign is handled by classify_debit_credit).
     """
     if not raw_value or not isinstance(raw_value, str):
@@ -57,9 +57,14 @@ def clean_amount(raw_value: str) -> Optional[float]:
     # Remove spaces
     s = s.strip()
 
-    # Handle leading minus/plus
-    negative = s.startswith('-')
-    s = s.lstrip('+-').strip()
+    # Avoid treating account/reference numbers as money when OCR places them
+    # near an amount column (for example loan account "750242141").
+    if re.fullmatch(r'\d{7,}', s):
+        return None
+
+    # Handle leading/trailing minus/plus. Some bank statements use "$123-".
+    negative = s.startswith('-') or s.endswith('-')
+    s = s.strip('+-').strip()
 
     # Remove thousands separators (commas) – but keep decimal point
     # Also handle European format: 1.234,56 → 1234.56

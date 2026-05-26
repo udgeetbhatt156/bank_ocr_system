@@ -34,6 +34,8 @@ COLUMN_PATTERNS = {
     'debit': [
         r'\bwithdrawal\b',
         r'\bwithdrawals\b',
+        r'\bsubtraction\b',
+        r'\bsubtractions\b',
         r'\bdebit\b',
         r'\bdr\b',
         r'\bdebit\s*amount\b',
@@ -44,6 +46,8 @@ COLUMN_PATTERNS = {
     'credit': [
         r'\bdeposit\b',
         r'\bdeposits\b',
+        r'\baddition\b',
+        r'\badditions\b',
         r'\bcredit\b',
         r'\bcr\b',
         r'\bcredit\s*amount\b',
@@ -138,13 +142,14 @@ def detect_header_row(rows: List[List[str]]) -> Optional[int]:
     header_keywords = [
         'date', 'description', 'debit', 'credit', 'balance',
         'particulars', 'withdrawal', 'deposit', 'amount', 'narration',
-        'transaction', 'details', 'withdrawal', 'post',
+        'transaction', 'details', 'withdrawal', 'post', 'subtractions',
+        'additions',
     ]
 
     best_idx = None
     best_score = 0
 
-    for idx, row in enumerate(rows[:20]):
+    for idx, row in enumerate(rows[:80]):
         row_text = ' '.join(str(c) for c in row).lower()
         score = sum(1 for kw in header_keywords if re.search(r'\b' + kw + r'\b', row_text))
         if score > best_score:

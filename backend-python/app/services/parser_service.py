@@ -73,7 +73,7 @@ def find_amounts(raw_text: str) -> List[Decimal]:
     for match in AMOUNT_REGEX.findall(raw_text):
         amount = normalize_amount(match)
         if amount is not None:
-            values.append(amount)
+            values.append(amount) 
     return values
 
 

@@ -17,6 +17,10 @@ interface OcrState {
   files: UploadFile[];
   uploadProgress: number;
   isProcessing: boolean;
+  processingStartedAt: number | null;
+  elapsedSeconds: number;
+  estimatedSeconds: number | null;
+  processingMessage: string | null;
 
   /* results */
   documents: DocumentResult[];
@@ -47,6 +51,10 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   files: [],
   uploadProgress: 0,
   isProcessing: false,
+  processingStartedAt: null,
+  elapsedSeconds: 0,
+  estimatedSeconds: null,
+  processingMessage: null,
   documents: [],
   activeTab: "overview",
 
@@ -100,15 +108,36 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     const pending = files.filter((f) => f.status === "pending");
     if (!pending.length) return;
 
+    const startedAt = Date.now();
+    const estimatedSeconds = estimateProcessingSeconds(pending.map((f) => f.file));
+    let timer: ReturnType<typeof setInterval> | null = null;
+
     set((s) => ({
       isProcessing: true,
       uploadProgress: 0,
+      processingStartedAt: startedAt,
+      elapsedSeconds: 0,
+      estimatedSeconds,
+      processingMessage: null,
       files: s.files.map((f) =>
         f.status === "pending" ? { ...f, status: "uploading" as const } : f
       ),
     }));
 
     try {
+      timer = setInterval(() => {
+        const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+        set({
+          elapsedSeconds,
+          processingMessage:
+            elapsedSeconds >= 180
+              ? `Extraction is taking longer than usual. Estimated total time is ${formatDuration(
+                  estimatedSeconds
+                )}; elapsed ${formatDuration(elapsedSeconds)}. Please wait.`
+              : null,
+        });
+      }, 1000);
+
       const raw = pending.map((f) => f.file);
       const result = await apiUploadStatements(raw, (pct) =>
         set({ uploadProgress: pct })
@@ -117,6 +146,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
       set((s) => ({
         isProcessing: false,
         uploadProgress: 100,
+        processingStartedAt: null,
+        processingMessage: null,
         // Deduplicate: replace existing doc with same filename, append new ones
         documents: (() => {
           const existing = [...s.documents];
@@ -138,6 +169,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
       const msg = err instanceof Error ? err.message : "Processing failed";
       set((s) => ({
         isProcessing: false,
+        processingStartedAt: null,
+        processingMessage: null,
         files: s.files.map((f) =>
           f.status === "uploading"
             ? { ...f, status: "error" as const, error: msg }
@@ -145,10 +178,21 @@ export const useOcrStore = create<OcrState>((set, get) => ({
         ),
       }));
       throw err;
+    } finally {
+      if (timer) clearInterval(timer);
     }
   },
 
-  clearResults: () => set({ documents: [], files: [], uploadProgress: 0 }),
+  clearResults: () =>
+    set({
+      documents: [],
+      files: [],
+      uploadProgress: 0,
+      processingStartedAt: null,
+      elapsedSeconds: 0,
+      estimatedSeconds: null,
+      processingMessage: null,
+    }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -182,3 +226,18 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     };
   },
 }));
+
+function estimateProcessingSeconds(files: File[]) {
+  const totalMb = files.reduce((sum, file) => sum + file.size / (1024 * 1024), 0);
+  const base = files.length * 45;
+  const sizeCost = totalMb * 35;
+  return Math.max(60, Math.ceil(base + sizeCost));
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds}s`;
+  if (seconds === 0) return `${minutes}m`;
+  return `${minutes}m ${seconds}s`;
+}

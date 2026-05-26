@@ -26,11 +26,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (email, password) => {
     const { user } = await apiLogin(email, password);
     set({ user, isAuthenticated: true });
+    const { useOcrStore } = await import("@/store/ocr-store");
+    useOcrStore.setState({ isHydrated: false, isHydrating: false });
+    void useOcrStore.getState().hydrateFromServer();
   },
 
   register: async (email, password, name) => {
     const { user } = await apiRegister(email, password, name);
     set({ user, isAuthenticated: true });
+    const { useOcrStore } = await import("@/store/ocr-store");
+    useOcrStore.setState({ isHydrated: false, isHydrating: false });
+    void useOcrStore.getState().hydrateFromServer();
   },
 
   logout: async () => {

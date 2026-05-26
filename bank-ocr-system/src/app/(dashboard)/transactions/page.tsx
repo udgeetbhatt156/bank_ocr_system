@@ -7,24 +7,37 @@ import { TransactionTable } from "@/components/transaction-table";
 import { TransactionFilters } from "@/components/transaction-filters";
 import { ExportButton } from "@/components/export-button";
 import { SummaryCard } from "@/components/summary-card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { formatUSD } from "@/lib/currency";
+import type { DocumentResult } from "@/lib/api";
 import {
   TrendingUp,
   TrendingDown,
   Activity,
   FileText,
   Upload,
-  ArrowRight,
+  Building2,
+  CreditCard,
+  User,
+  Wallet,
 } from "lucide-react";
 import Link from "next/link";
 
-function formatINR(value: number) {
-  if (value === 0) return "₹0.00";
-  return `₹${value.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+function displayMeta(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
+
+function resolveActiveDocument(
+  documents: DocumentResult[],
+  sourceFilter: string
+): DocumentResult | undefined {
+  if (sourceFilter !== "all") {
+    return documents.find((d) => d.filename === sourceFilter);
+  }
+  if (documents.length === 1) return documents[0];
+  return documents[documents.length - 1];
 }
 
 export default function TransactionsPage() {
@@ -36,6 +49,18 @@ export default function TransactionsPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
 
+  const activeDocument = useMemo(
+    () => resolveActiveDocument(documents, sourceFilter),
+    [documents, sourceFilter]
+  );
+
+  const accountMetaSubtitle =
+    sourceFilter === "all" && documents.length > 1
+      ? `From ${activeDocument?.filename ?? "latest statement"} (${documents.length} statements)`
+      : activeDocument?.filename
+        ? `From ${activeDocument.filename}`
+        : undefined;
+
   /* Unique source filenames */
   const sources = useMemo(
     () => [...new Set(transactions.map((t) => t._filename))],
@@ -45,7 +70,6 @@ export default function TransactionsPage() {
   /* Filter logic */
   const filtered = useMemo(() => {
     return transactions.filter((t) => {
-      // Search
       if (search) {
         const q = search.toLowerCase();
         const matchesSearch =
@@ -56,11 +80,9 @@ export default function TransactionsPage() {
         if (!matchesSearch) return false;
       }
 
-      // Type
       if (typeFilter === "credit" && !Number(t.credit)) return false;
       if (typeFilter === "debit" && !Number(t.debit)) return false;
 
-      // Source
       if (sourceFilter !== "all" && t._filename !== sourceFilter) return false;
 
       return true;
@@ -86,13 +108,13 @@ export default function TransactionsPage() {
   const tabItems = useMemo(() => {
     const items = [{ value: "all", label: "All Transactions" }];
     documents.forEach((doc, idx) => {
-      // Use index-prefixed value so duplicate filenames never collide
       const tabValue = `doc-${idx}-${doc.filename}`;
       items.push({
         value: tabValue,
-        label: doc.filename.length > 20
-          ? doc.filename.slice(0, 18) + "…"
-          : doc.filename,
+        label:
+          doc.filename.length > 20
+            ? doc.filename.slice(0, 18) + "…"
+            : doc.filename,
       });
     });
     return items;
@@ -129,23 +151,59 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
+      {/* Account metadata from OCR */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard
+          title="Bank Name"
+          value={displayMeta(activeDocument?.bank_name)}
+          subtitle={accountMetaSubtitle}
+          icon={<Building2 className="h-5 w-5" />}
+          accentColor="bg-sky-500/10 text-sky-600 dark:text-sky-400"
+        />
+        <SummaryCard
+          title="Account Number"
+          value={displayMeta(activeDocument?.account_number)}
+          subtitle="Extracted from statement"
+          icon={<CreditCard className="h-5 w-5" />}
+          accentColor="bg-violet-500/10 text-violet-600 dark:text-violet-400"
+        />
+        <SummaryCard
+          title="Customer Number"
+          value={displayMeta(activeDocument?.customer_number)}
+          subtitle="Extracted from statement"
+          icon={<User className="h-5 w-5" />}
+          accentColor="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+        />
+        <SummaryCard
+          title="Current Balance"
+          value={
+            activeDocument?.current_balance != null
+              ? formatUSD(activeDocument.current_balance)
+              : "—"
+          }
+          subtitle="Ending balance from OCR"
+          icon={<Wallet className="h-5 w-5" />}
+          accentColor="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+        />
+      </div>
+
+      {/* Flow summary cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard
           title="Total Credits"
-          value={formatINR(stats.totalCredits)}
+          value={formatUSD(stats.totalCredits)}
           icon={<TrendingUp className="h-5 w-5" />}
           accentColor="bg-[var(--credit)]/10 text-[var(--credit)]"
         />
         <SummaryCard
           title="Total Debits"
-          value={formatINR(stats.totalDebits)}
+          value={formatUSD(stats.totalDebits)}
           icon={<TrendingDown className="h-5 w-5" />}
           accentColor="bg-[var(--debit)]/10 text-[var(--debit)]"
         />
         <SummaryCard
           title="Net Flow"
-          value={formatINR(stats.netFlow)}
+          value={formatUSD(stats.netFlow)}
           subtitle={`${stats.totalTransactions} transactions across ${stats.statementsProcessed} statements`}
           icon={<Activity className="h-5 w-5" />}
           accentColor="bg-primary/10 text-primary"
@@ -159,7 +217,6 @@ export default function TransactionsPage() {
           if (val === "all") {
             setSourceFilter("all");
           } else {
-            // Strip the "doc-N-" prefix to get the actual filename
             const filename = val.replace(/^doc-\d+-/, "");
             setSourceFilter(filename);
           }
@@ -176,7 +233,6 @@ export default function TransactionsPage() {
           <ExportButton data={exportData} filename="bank_transactions" />
         </div>
 
-        {/* Filters */}
         <div className="mt-4">
           <TransactionFilters
             search={search}
@@ -189,7 +245,6 @@ export default function TransactionsPage() {
           />
         </div>
 
-        {/* Table content — same table for all tabs, filtered by source */}
         <div className="mt-4">
           <TransactionTable data={filtered} />
         </div>

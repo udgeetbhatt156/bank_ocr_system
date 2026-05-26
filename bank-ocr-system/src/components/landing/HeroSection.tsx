@@ -122,9 +122,9 @@ export default function HeroSection() {
                             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                                 {[
                                     { label: "Statements", value: "10", color: "text-indigo-400" },
-                                    { label: "Total Credits", value: "₹8,42,300", color: "text-emerald-400" },
-                                    { label: "Total Debits", value: "₹3,18,750", color: "text-rose-400" },
-                                    { label: "Net Flow", value: "₹5,23,550", color: "text-violet-400" },
+                                    { label: "Total Credits", value: "$84,230.00", color: "text-emerald-400" },
+                                    { label: "Total Debits", value: "$31,875.00", color: "text-rose-400" },
+                                    { label: "Net Flow", value: "$52,355.00", color: "text-violet-400" },
                                 ].map((card) => (
                                     <div
                                         key={card.label}
@@ -154,10 +154,10 @@ export default function HeroSection() {
                                     </thead>
                                     <tbody>
                                         {[
-                                            { date: "15/04/2026", desc: "NEFT-HDFC-SALARY APR", debit: "", credit: "₹85,000", balance: "₹1,42,350", type: "credit" },
-                                            { date: "16/04/2026", desc: "UPI/408512349/Amazon", debit: "₹2,499", credit: "", balance: "₹1,39,851", type: "debit" },
-                                            { date: "18/04/2026", desc: "IMPS-SBI-RENT APRIL", debit: "₹18,000", credit: "", balance: "₹1,21,851", type: "debit" },
-                                            { date: "20/04/2026", desc: "NEFT-FREELANCE-INV042", debit: "", credit: "₹35,000", balance: "₹1,56,851", type: "credit" },
+                                            { date: "04/15/2026", desc: "ACH-PAYROLL-BMO", debit: "", credit: "$8,500.00", balance: "$14,235.00", type: "credit" },
+                                            { date: "04/16/2026", desc: "POS AMAZON.COM", debit: "$249.99", credit: "", balance: "$13,985.01", type: "debit" },
+                                            { date: "04/18/2026", desc: "ONLINE RENT PAYMENT", debit: "$1,800.00", credit: "", balance: "$12,185.01", type: "debit" },
+                                            { date: "04/20/2026", desc: "WIRE INVOICE 042", debit: "", credit: "$3,500.00", balance: "$15,685.01", type: "credit" },
                                         ].map((row, i) => (
                                             <tr
                                                 key={i}

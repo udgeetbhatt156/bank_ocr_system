@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { formatUSD } from "@/lib/currency";
 
 /* ── Demo / placeholder data when no real data exists ── */
 const DEMO_BAR_DATA = [
@@ -36,11 +37,6 @@ const DEMO_TREND_DATA = [
   { name: "May", amount: 33000 },
   { name: "Jun", amount: 41000 },
 ];
-
-function formatINR(value: number) {
-  if (value === 0) return "₹0";
-  return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
 
 export default function DashboardPage() {
   const { documents, summaryStats, allTransactions } = useOcrStore();
@@ -92,21 +88,21 @@ export default function DashboardPage() {
         />
         <SummaryCard
           title="Total Credits"
-          value={hasData ? formatINR(stats.totalCredits) : "—"}
+          value={hasData ? formatUSD(stats.totalCredits) : "—"}
           subtitle="All inflows combined"
           icon={<TrendingUp className="h-5 w-5" />}
           accentColor="bg-[var(--credit)]/10 text-[var(--credit)]"
         />
         <SummaryCard
           title="Total Debits"
-          value={hasData ? formatINR(stats.totalDebits) : "—"}
+          value={hasData ? formatUSD(stats.totalDebits) : "—"}
           subtitle="All outflows combined"
           icon={<TrendingDown className="h-5 w-5" />}
           accentColor="bg-[var(--debit)]/10 text-[var(--debit)]"
         />
         <SummaryCard
           title="Net Flow"
-          value={hasData ? formatINR(stats.netFlow) : "—"}
+          value={hasData ? formatUSD(stats.netFlow) : "—"}
           subtitle={`${hasData ? stats.totalTransactions : 0} transactions`}
           icon={<Activity className="h-5 w-5" />}
           accentColor="bg-[var(--chart-5)]/10 text-[var(--chart-5)]"
@@ -192,17 +188,13 @@ export default function DashboardPage() {
                       {t.description || "—"}
                     </td>
                     <td className="py-2.5 pr-4 text-right font-medium whitespace-nowrap text-[var(--debit)]">
-                      {t.debit ? `₹${Number(t.debit).toLocaleString("en-IN")}` : "—"}
+                      {t.debit ? formatUSD(Number(t.debit)) : "—"}
                     </td>
                     <td className="py-2.5 pr-4 text-right font-medium whitespace-nowrap text-[var(--credit)]">
-                      {t.credit
-                        ? `₹${Number(t.credit).toLocaleString("en-IN")}`
-                        : "—"}
+                      {t.credit ? formatUSD(Number(t.credit)) : "—"}
                     </td>
                     <td className="py-2.5 text-right text-muted-foreground whitespace-nowrap">
-                      {t.balance
-                        ? `₹${Number(t.balance).toLocaleString("en-IN")}`
-                        : "—"}
+                      {t.balance ? formatUSD(Number(t.balance)) : "—"}
                     </td>
                   </tr>
                 ))}

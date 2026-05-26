@@ -26,9 +26,36 @@ from app.services.table_parser import map_columns, merge_wrapped_rows, detect_he
 from app.services.postprocessor import (
     clean_amount, parse_date, classify_debit_credit, calculate_confidence
 )
+from app.services.metadata_extractor import extract_statement_metadata
 
 router = APIRouter()
 LOGGER = logging.getLogger(__name__)
+
+
+def _statement_result(
+    *,
+    filename: str,
+    transactions: List[Transaction],
+    confidence: float,
+    pdf_type: str,
+    warnings: List[str],
+    rows: List[List[str]],
+    raw_text: str,
+    header_idx: Optional[int] = None,
+) -> StatementResult:
+    meta = extract_statement_metadata(rows, transactions, header_idx=header_idx)
+    return StatementResult(
+        filename=filename,
+        transactions=transactions,
+        confidence=confidence,
+        pdf_type=pdf_type,
+        warnings=warnings,
+        raw_text=raw_text,
+        bank_name=meta["bank_name"],
+        account_number=meta["account_number"],
+        customer_number=meta["customer_number"],
+        current_balance=meta["current_balance"],
+    )
 
 
 #  File writer 
@@ -148,24 +175,29 @@ def process_single_statement(file_path: Path) -> StatementResult:
             warnings.append(f"OCR extraction failed: {e}")
 
     if not rows:
-        return StatementResult(
-            filename=file_path.name, transactions=[],
-            confidence=0.0, pdf_type=pdf_type,
+        return _statement_result(
+            filename=file_path.name,
+            transactions=[],
+            confidence=0.0,
+            pdf_type=pdf_type,
             warnings=warnings + ["No data extracted from document"],
-            raw_text=""
+            rows=[],
+            raw_text="",
         )
 
     add_sub_transactions = _parse_additions_subtractions_rows(rows)
     if add_sub_transactions:
         confidence = calculate_confidence([t.dict() for t in add_sub_transactions])
         raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
-        return StatementResult(
+        return _statement_result(
             filename=file_path.name,
             transactions=add_sub_transactions,
             confidence=confidence,
             pdf_type=pdf_type,
             warnings=warnings,
+            rows=rows,
             raw_text=raw_text,
+            header_idx=detect_header_row(rows),
         )
 
     # Step 3: Find header row
@@ -189,13 +221,15 @@ def process_single_statement(file_path: Path) -> StatementResult:
         confidence = calculate_confidence([t.dict() for t in transactions])
         raw_text = "\n".join(" | ".join(r) for r in rows[:20])
         LOGGER.info(f"[{file_path.name}] heuristic → {len(transactions)} transactions")
-        return StatementResult(
+        return _statement_result(
             filename=file_path.name,
             transactions=transactions,
             confidence=confidence,
             pdf_type=pdf_type,
             warnings=warnings,
+            rows=rows,
             raw_text=raw_text,
+            header_idx=header_idx,
         )
 
     #  Step 5: Merge wrapped rows 
@@ -263,13 +297,15 @@ def process_single_statement(file_path: Path) -> StatementResult:
         warnings.append(f"No dates recognised in {rows_processed} rows")
 
     raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
-    return StatementResult(
+    return _statement_result(
         filename=file_path.name,
         transactions=transactions,
         confidence=confidence,
         pdf_type=pdf_type,
         warnings=warnings,
+        rows=rows,
         raw_text=raw_text,
+        header_idx=header_idx,
     )
 
 

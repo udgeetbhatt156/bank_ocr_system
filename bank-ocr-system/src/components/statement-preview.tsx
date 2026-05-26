@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatUSD } from "@/lib/currency";
 
 /* ═══════════════════════════════════════════
    SCAN OVERLAY — animated laser line
@@ -93,13 +94,13 @@ function ExtractedDataPanel({ doc }: { doc: DocumentResult }) {
         <div className="rounded-lg bg-[var(--credit)]/5 px-3 py-2">
           <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--credit)]">Credits</p>
           <p className="text-sm font-bold text-[var(--credit)]">
-            ₹{totalCredits.toLocaleString("en-IN")}
+            {formatUSD(totalCredits, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </p>
         </div>
         <div className="rounded-lg bg-[var(--debit)]/5 px-3 py-2">
           <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--debit)]">Debits</p>
           <p className="text-sm font-bold text-[var(--debit)]">
-            ₹{totalDebits.toLocaleString("en-IN")}
+            {formatUSD(totalDebits, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </p>
         </div>
       </div>
@@ -121,11 +122,11 @@ function ExtractedDataPanel({ doc }: { doc: DocumentResult }) {
               <div className="shrink-0 text-right">
                 {t.credit ? (
                   <span className="font-semibold text-[var(--credit)]">
-                    +₹{Number(t.credit).toLocaleString("en-IN")}
+                    +{formatUSD(Number(t.credit))}
                   </span>
                 ) : t.debit ? (
                   <span className="font-semibold text-[var(--debit)]">
-                    -₹{Number(t.debit).toLocaleString("en-IN")}
+                    -{formatUSD(Number(t.debit))}
                   </span>
                 ) : (
                   <span className="text-muted-foreground">—</span>

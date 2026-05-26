@@ -23,14 +23,37 @@ export interface TransactionRecord {
 }
 
 export interface DocumentResult {
+  id?: string;
   filename: string;
   raw_text: string;
+  fileUrl?: string;
   transactions: TransactionRecord[];
+  bank_name?: string | null;
+  account_number?: string | null;
+  customer_number?: string | null;
+  current_balance?: number | null;
+}
+
+export interface StatementListItem {
+  id: string;
+  fileName: string;
+  uploadedAt: string;
+  processedAt: string | null;
+  status: string;
+  bankName: string | null;
+  accountNumber: string | null;
+  customerNumber: string | null;
+  currentBalance: number | null;
+  transactionCount: number;
+  totalCredits: number;
+  totalDebits: number;
+  fileUrl: string;
 }
 
 export interface ProcessResponse {
   status: string;
   documents: DocumentResult[];
+  warnings?: string[];
 }
 
 // ── Helpers ──
@@ -94,9 +117,7 @@ export async function apiGetMe() {
   return request<{ user: User | null }>("/api/auth/me");
 }
 
-//OCR Processing 
-
-const PYTHON_OCR_URL = process.env.NEXT_PUBLIC_PYTHON_OCR_URL || "http://localhost:8000";
+// OCR Processing (authenticated — saves to database)
 
 export async function apiUploadStatements(
   files: File[],
@@ -119,7 +140,11 @@ export async function apiUploadStatements(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(data as ProcessResponse);
         } else {
-          reject(new ApiError(data.detail || data.error || "Upload failed", xhr.status));
+          const detail =
+            typeof data.detail === "string"
+              ? data.detail
+              : data.error || "Upload failed";
+          reject(new ApiError(detail, xhr.status));
         }
       } catch {
         reject(new ApiError("Invalid server response", xhr.status));
@@ -130,8 +155,26 @@ export async function apiUploadStatements(
       reject(new ApiError("Network error", 0))
     );
 
-    // Call Python backend directly
-    xhr.open("POST", `${PYTHON_OCR_URL}/api/ocr/process`);
+    xhr.withCredentials = true;
+    xhr.open("POST", `${BASE}/api/ocr/process`);
     xhr.send(formData);
   });
+}
+
+export async function apiFetchSavedStatements(): Promise<ProcessResponse> {
+  return request<ProcessResponse>("/api/statements");
+}
+
+export async function apiFetchStatementList(): Promise<{
+  statements: StatementListItem[];
+}> {
+  return request<{ statements: StatementListItem[] }>(
+    "/api/statements?view=list"
+  );
+}
+
+export async function apiFetchStatement(id: string): Promise<{
+  document: DocumentResult;
+}> {
+  return request<{ document: DocumentResult }>(`/api/statements/${id}`);
 }

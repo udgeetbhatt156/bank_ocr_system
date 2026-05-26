@@ -24,6 +24,10 @@ class StatementResult(BaseModel):
     pdf_type: str  # "digital" or "scanned"
     warnings: List[str] = []
     raw_text: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    customer_number: Optional[str] = None
+    current_balance: Optional[float] = None
 
 
 class OCRResponse(BaseModel):

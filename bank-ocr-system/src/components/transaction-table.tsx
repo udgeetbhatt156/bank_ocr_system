@@ -12,6 +12,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import type { TransactionRecord } from "@/lib/api";
+import { formatUSD } from "@/lib/currency";
 import {
   Table,
   TableBody,
@@ -36,11 +37,11 @@ interface TransactionTableProps {
   data: TxRow[];
 }
 
-function formatAmount(v: number | string | null, type: "credit" | "debit") {
+function formatAmount(v: number | string | null) {
   if (v === null || v === undefined) return "—";
   const num = Number(v);
   if (isNaN(num) || num === 0) return "—";
-  return `₹${num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return formatUSD(num);
 }
 
 const columns: ColumnDef<TxRow>[] = [
@@ -90,7 +91,7 @@ const columns: ColumnDef<TxRow>[] = [
     ),
     cell: ({ getValue }) => {
       const val = getValue() as number | null;
-      const display = formatAmount(val, "debit");
+      const display = formatAmount(val);
       return (
         <span
           className={`whitespace-nowrap text-sm font-medium ${
@@ -116,7 +117,7 @@ const columns: ColumnDef<TxRow>[] = [
     ),
     cell: ({ getValue }) => {
       const val = getValue() as number | null;
-      const display = formatAmount(val, "credit");
+      const display = formatAmount(val);
       return (
         <span
           className={`whitespace-nowrap text-sm font-medium ${
@@ -138,7 +139,7 @@ const columns: ColumnDef<TxRow>[] = [
       if (val === null || val === undefined) return <span className="text-sm text-muted-foreground">—</span>;
       return (
         <span className="whitespace-nowrap text-sm text-foreground">
-          ₹{Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {formatUSD(Number(val))}
         </span>
       );
     },
@@ -246,10 +247,10 @@ export function TransactionTable({ data }: TransactionTableProps) {
               <TableCell className="py-2.5 text-sm">Total</TableCell>
               <TableCell />
               <TableCell className="py-2.5 text-sm text-[var(--debit)]">
-                ₹{totals.debit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatUSD(totals.debit)}
               </TableCell>
               <TableCell className="py-2.5 text-sm text-[var(--credit)]">
-                ₹{totals.credit.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatUSD(totals.credit)}
               </TableCell>
               <TableCell />
               <TableCell />

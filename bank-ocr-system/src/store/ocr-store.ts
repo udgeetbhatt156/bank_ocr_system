@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import {
   apiUploadStatements,
+  apiFetchSavedStatements,
   type DocumentResult,
+  type ProcessResponse,
   type TransactionRecord,
 } from "@/lib/api";
 
@@ -25,13 +27,16 @@ interface OcrState {
   /* results */
   documents: DocumentResult[];
   activeTab: string;
+  isHydrated: boolean;
+  isHydrating: boolean;
 
   /* actions */
   addFiles: (newFiles: File[]) => { added: string[]; duplicates: string[] };
   removeFile: (id: string) => void;
   clearFiles: () => void;
-  processFiles: () => Promise<void>;
+  processFiles: () => Promise<ProcessResponse>;
   clearResults: () => void;
+  hydrateFromServer: (force?: boolean) => Promise<void>;
   setActiveTab: (tab: string) => void;
 
   /* computed-like helpers */
@@ -57,6 +62,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   processingMessage: null,
   documents: [],
   activeTab: "overview",
+  isHydrated: false,
+  isHydrating: false,
 
   addFiles: (newFiles) => {
     const { files, documents } = get();
@@ -106,7 +113,9 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     const { files } = get();
     // Only process pending files — skip duplicates
     const pending = files.filter((f) => f.status === "pending");
-    if (!pending.length) return;
+    if (!pending.length) {
+      return { status: "success", documents: get().documents };
+    }
 
     const startedAt = Date.now();
     const estimatedSeconds = estimateProcessingSeconds(pending.map((f) => f.file));
@@ -143,28 +152,21 @@ export const useOcrStore = create<OcrState>((set, get) => ({
         set({ uploadProgress: pct })
       );
 
+      const notPersisted = result.documents.filter((d) => !d.id);
       set((s) => ({
         isProcessing: false,
         uploadProgress: 100,
         processingStartedAt: null,
         processingMessage: null,
-        // Deduplicate: replace existing doc with same filename, append new ones
-        documents: (() => {
-          const existing = [...s.documents];
-          for (const incoming of result.documents) {
-            const idx = existing.findIndex((d) => d.filename === incoming.filename);
-            if (idx !== -1) {
-              existing[idx] = incoming;
-            } else {
-              existing.push(incoming);
-            }
-          }
-          return existing;
-        })(),
+        documents: mergeDocuments(s.documents, result.documents),
+        isHydrated: true,
         files: s.files.map((f) =>
           f.status === "uploading" ? { ...f, status: "success" as const } : f
         ),
       }));
+
+      await get().hydrateFromServer(true);
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Processing failed";
       set((s) => ({
@@ -193,6 +195,23 @@ export const useOcrStore = create<OcrState>((set, get) => ({
       estimatedSeconds: null,
       processingMessage: null,
     }),
+
+  hydrateFromServer: async (force = false) => {
+    const { isHydrated, isHydrating } = get();
+    if (!force && (isHydrated || isHydrating)) return;
+
+    set({ isHydrating: true });
+    try {
+      const result = await apiFetchSavedStatements();
+      set({
+        documents: result.documents,
+        isHydrated: true,
+        isHydrating: false,
+      });
+    } catch {
+      set({ isHydrated: true, isHydrating: false });
+    }
+  },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
@@ -226,6 +245,26 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     };
   },
 }));
+
+function mergeDocuments(
+  current: DocumentResult[],
+  incoming: DocumentResult[]
+): DocumentResult[] {
+  const existing = [...current];
+  for (const doc of incoming) {
+    const idx = existing.findIndex(
+      (d) =>
+        (doc.id && d.id === doc.id) ||
+        (!doc.id && d.filename === doc.filename)
+    );
+    if (idx !== -1) {
+      existing[idx] = doc;
+    } else {
+      existing.push(doc);
+    }
+  }
+  return existing;
+}
 
 function estimateProcessingSeconds(files: File[]) {
   const totalMb = files.reduce((sum, file) => sum + file.size / (1024 * 1024), 0);

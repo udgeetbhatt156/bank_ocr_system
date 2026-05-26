@@ -31,10 +31,24 @@ export default function UploadPage() {
       return;
     }
     try {
-      await processFiles();
+      const result = await processFiles();
+      const savedCount = useOcrStore
+        .getState()
+        .documents.filter((d) => d.id).length;
       toast.success(
-        `${pendingCount} statement${pendingCount !== 1 ? "s" : ""} processed successfully!`
+        `${pendingCount} statement${pendingCount !== 1 ? "s" : ""} processed and saved!`,
+        {
+          description:
+            savedCount > 0
+              ? "View them anytime under History or Transactions."
+              : undefined,
+        }
       );
+      if (result?.warnings?.length) {
+        toast.warning("Some files could not be saved", {
+          description: result.warnings.join("; "),
+        });
+      }
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to process statements"

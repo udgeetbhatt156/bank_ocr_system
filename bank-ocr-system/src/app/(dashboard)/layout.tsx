@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "@/store/auth-store";
+import { useOcrStore } from "@/store/ocr-store";
 import {
   LayoutDashboard,
   Upload,
@@ -12,10 +13,9 @@ import {
   FileText,
   LogOut,
   Menu,
-  X,
   ChevronLeft,
   Bell,
-  User,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -33,6 +33,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/transactions", label: "Transactions", icon: TableProperties },
+  { href: "/history", label: "History", icon: History },
 ];
 
 function getPageTitle(pathname: string) {
@@ -147,6 +148,8 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, isLoading, isAuthenticated, checkSession, logout } = useAuthStore();
+  const hydrateFromServer = useOcrStore((s) => s.hydrateFromServer);
+  const clearOcrResults = useOcrStore((s) => s.clearResults);
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -162,10 +165,18 @@ export default function DashboardLayout({
     }
   }, [isLoading, isAuthenticated, router]);
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      hydrateFromServer();
+    }
+  }, [isAuthenticated, hydrateFromServer]);
+
   const handleLogout = useCallback(async () => {
+    clearOcrResults();
+    useOcrStore.setState({ isHydrated: false, isHydrating: false });
     await logout();
     router.replace("/login");
-  }, [logout, router]);
+  }, [logout, router, clearOcrResults]);
 
   if (isLoading || !isAuthenticated) {
     return (

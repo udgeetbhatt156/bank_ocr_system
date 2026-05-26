@@ -18,9 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/* ═══════════════════════════════════════════
-   TYPES
-   ═══════════════════════════════════════════ */
+/*  TYPES */
 type HealthStatus = "healthy" | "degraded" | "offline" | "checking";
 
 interface OcrHealthData {
@@ -33,9 +31,7 @@ interface OcrHealthData {
   lastChecked: Date | null;
 }
 
-/* ═══════════════════════════════════════════
-   CIRCULAR GAUGE
-   ═══════════════════════════════════════════ */
+/* CIRCULAR GAUGE */
 function ConfidenceGauge({ value, size = 120 }: { value: number; size?: number }) {
   const radius = (size - 16) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -103,9 +99,7 @@ function ConfidenceGauge({ value, size = 120 }: { value: number; size?: number }
   );
 }
 
-/* ═══════════════════════════════════════════
-   STATUS INDICATOR
-   ═══════════════════════════════════════════ */
+/* STATUS INDICATOR */
 function StatusIndicator({ status }: { status: HealthStatus }) {
   const config = {
     healthy: {
@@ -173,9 +167,7 @@ function StatusIndicator({ status }: { status: HealthStatus }) {
   );
 }
 
-/* ═══════════════════════════════════════════
-   METRIC CARD
-   ═══════════════════════════════════════════ */
+/* METRIC CARD */
 function MetricCard({
   icon: Icon,
   label,
@@ -209,9 +201,7 @@ function MetricCard({
   );
 }
 
-/* ═══════════════════════════════════════════
-   MAIN COMPONENT
-   ═══════════════════════════════════════════ */
+// Main Component
 export function OcrHealth() {
   const { documents } = useOcrStore();
   const [health, setHealth] = useState<OcrHealthData>({
@@ -395,7 +385,7 @@ export function OcrHealth() {
           {[
             { label: "Primary OCR", value: "PaddleOCR v4 + PP-StructureV3" },
             { label: "Digital PDF", value: "PyMuPDF + pdfplumber" },
-            { label: "Fallback OCR", value: "Tesseract 5 / EasyOCR" },
+            { label: "Fallback OCR", value: "PaddleOCR v4/ EasyOCR" },
             { label: "Post-Processing", value: "Rule Engine + pandas" },
           ].map((detail) => (
             <div key={detail.label}>

@@ -56,6 +56,7 @@ export function TransactionFilters({
       </Select>
 
       {/* Source filter */}
+      {/* onValueChange={onSourceFilterChange} */}
       {sources.length > 1 && (
         <Select value={sourceFilter} onValueChange={onSourceFilterChange}>
           <SelectTrigger id="source-filter" className="w-[180px] h-9">

@@ -11,7 +11,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import type { TransactionRecord } from "@/lib/api";
+import type { ColumnVisibility, TransactionRecord } from "@/lib/api";
 import { formatUSD } from "@/lib/currency";
 import {
   Table,
@@ -35,6 +35,7 @@ type TxRow = TransactionRecord & { _filename: string };
 
 interface TransactionTableProps {
   data: TxRow[];
+  typeFilter?: string;
 }
 
 function formatAmount(v: number | string | null) {
@@ -94,9 +95,8 @@ const columns: ColumnDef<TxRow>[] = [
       const display = formatAmount(val);
       return (
         <span
-          className={`whitespace-nowrap text-sm font-medium ${
-            display !== "—" ? "text-[var(--debit)]" : "text-muted-foreground"
-          }`}
+          className={`whitespace-nowrap text-sm font-medium ${display !== "—" ? "text-[var(--debit)]" : "text-muted-foreground"
+            }`}
         >
           {display}
         </span>
@@ -120,9 +120,8 @@ const columns: ColumnDef<TxRow>[] = [
       const display = formatAmount(val);
       return (
         <span
-          className={`whitespace-nowrap text-sm font-medium ${
-            display !== "—" ? "text-[var(--credit)]" : "text-muted-foreground"
-          }`}
+          className={`whitespace-nowrap text-sm font-medium ${display !== "—" ? "text-[var(--credit)]" : "text-muted-foreground"
+            }`}
         >
           {display}
         </span>
@@ -144,21 +143,21 @@ const columns: ColumnDef<TxRow>[] = [
       );
     },
   },
-  {
-    accessorKey: "reference",
-    header: () => (
-      <span className="text-xs font-semibold uppercase">Reference</span>
-    ),
-    cell: ({ getValue }) => {
-      const val = getValue() as string | null;
-      if (!val) return <span className="text-sm text-muted-foreground">—</span>;
-      return (
-        <Badge variant="secondary" className="text-xs font-mono">
-          {val}
-        </Badge>
-      );
-    },
-  },
+  // {
+  //   accessorKey: "reference",
+  //   header: () => (
+  //     <span className="text-xs font-semibold uppercase">Reference</span>
+  //   ),
+  //   cell: ({ getValue }) => {
+  //     const val = getValue() as string | null;
+  //     if (!val) return <span className="text-sm text-muted-foreground">—</span>;
+  //     return (
+  //       <Badge variant="secondary" className="text-xs font-mono">
+  //         {val}
+  //       </Badge>
+  //     );
+  //   },
+  // },
   {
     accessorKey: "_filename",
     header: () => (
@@ -172,13 +171,20 @@ const columns: ColumnDef<TxRow>[] = [
   },
 ];
 
-export function TransactionTable({ data }: TransactionTableProps) {
+export function TransactionTable({ data, typeFilter = "all" }: TransactionTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
+
+  /* Hide debit column when filtering credits-only, and vice versa */
+  const columnVisibility: ColumnVisibility = useMemo(() => {
+    if (typeFilter === "credit") return { debit: false };
+    if (typeFilter === "debit") return { credit: false };
+    return {};
+  }, [typeFilter]);
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
+    state: { sorting, columnVisibility },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -202,7 +208,7 @@ export function TransactionTable({ data }: TransactionTableProps) {
     }
     return { debit, credit };
   }, [data]);
-
+  // console.log('Datatatat', data[0])
   if (!data.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/50 py-16 text-center">
@@ -242,18 +248,22 @@ export function TransactionTable({ data }: TransactionTableProps) {
               </TableRow>
             ))}
 
-            {/* Totals row */}
+            {/* Totals row — adapts to visible columns */}
             <TableRow className="bg-muted/30 font-semibold hover:bg-muted/40">
               <TableCell className="py-2.5 text-sm">Total</TableCell>
               <TableCell />
-              <TableCell className="py-2.5 text-sm text-[var(--debit)]">
-                {formatUSD(totals.debit)}
-              </TableCell>
-              <TableCell className="py-2.5 text-sm text-[var(--credit)]">
-                {formatUSD(totals.credit)}
-              </TableCell>
+              {typeFilter !== "credit" && (
+                <TableCell className="py-2.5 text-sm text-[var(--debit)]">
+                  {formatUSD(totals.debit)}
+                </TableCell>
+              )}
+              {typeFilter !== "debit" && (
+                <TableCell className="py-2.5 text-sm text-[var(--credit)]">
+                  {formatUSD(totals.credit)}
+                </TableCell>
+              )}
               <TableCell />
-              <TableCell />
+              {/* <TableCell /> */}
               <TableCell />
             </TableRow>
           </TableBody>

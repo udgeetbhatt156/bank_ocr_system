@@ -38,7 +38,7 @@ export function SummaryCard({
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {title}
           </p>
-          <p className="text-2xl font-bold tracking-tight text-foreground">
+          <p className="text-xl font-bold tracking-tight text-foreground">
             {value}
           </p>
           {subtitle && (

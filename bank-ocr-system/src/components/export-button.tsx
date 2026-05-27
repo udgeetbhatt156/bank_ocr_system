@@ -18,7 +18,7 @@ interface ExportRow {
   Debit: string;
   Credit: string;
   Balance: string;
-  Reference: string;
+  // Reference: string;
   Source: string;
 }
 
@@ -46,7 +46,7 @@ export function ExportButton({ data, filename = "transactions" }: ExportButtonPr
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     saveAs(blob, `${filename}.csv`);
   }, [data, filename]);
-
+  // console.log('new exported data:',data)
   const exportExcel = useCallback(() => {
     if (!data.length) return;
     const ws = XLSX.utils.json_to_sheet(data);

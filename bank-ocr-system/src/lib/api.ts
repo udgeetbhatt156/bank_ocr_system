@@ -1,16 +1,19 @@
-/* ─────────────────────────────────────────────
-   Centralized API client for all frontend calls
-   ───────────────────────────────────────────── */
+/* Centralized API client for all frontend calls */
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-// ── Types ──
+// Types 
 
 export interface User {
   id: string;
   email: string;
   name: string | null;
 }
+
+export type ColumnVisibility = {
+  debit?: boolean;
+  credit?: boolean;
+};
 
 export interface TransactionRecord {
   date: string | null;
@@ -56,7 +59,7 @@ export interface ProcessResponse {
   warnings?: string[];
 }
 
-// ── Helpers ──
+//Helpers
 
 class ApiError extends Error {
   status: number;
@@ -85,7 +88,7 @@ async function request<T>(
   return data as T;
 }
 
-// ── Auth ──
+//Auth
 
 export async function apiLogin(email: string, password: string) {
   return request<{ user: User }>("/api/auth/login", {

@@ -41,14 +41,13 @@ function resolveActiveDocument(
 }
 
 export default function TransactionsPage() {
-  const { documents, allTransactions, summaryStats } = useOcrStore();
+  const { documents, allTransactions } = useOcrStore();
   const transactions = allTransactions();
-  const stats = summaryStats();
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-
+  // console.log("udgeeet Bhatt", "sourceFilter:", sourceFilter);
   const activeDocument = useMemo(
     () => resolveActiveDocument(documents, sourceFilter),
     [documents, sourceFilter]
@@ -66,6 +65,8 @@ export default function TransactionsPage() {
     () => [...new Set(transactions.map((t) => t._filename))],
     [transactions]
   );
+
+  // console.log("source source", sources, "activeDocument:", activeDocument);
 
   /* Filter logic */
   const filtered = useMemo(() => {
@@ -89,6 +90,32 @@ export default function TransactionsPage() {
     });
   }, [transactions, search, typeFilter, sourceFilter]);
 
+  /* Compute stats from the currently visible (source-filtered) transactions.
+     When "All Transactions" tab is active → global stats.
+     When a specific PDF is selected → per-PDF stats. */
+  const stats = useMemo(() => {
+    // Use source-filtered transactions (ignore text search & type filter
+    // so that summary cards always reflect the full scope of the selected source)
+    const scopedTx = sourceFilter === "all"
+      ? transactions
+      : transactions.filter((t) => t._filename === sourceFilter);
+
+    let totalCredits = 0;
+    let totalDebits = 0;
+    for (const t of scopedTx) {
+      totalCredits += Number(t.credit || 0);
+      totalDebits += Number(t.debit || 0);
+    }
+
+    return {
+      totalCredits,
+      totalDebits,
+      netFlow: totalCredits - totalDebits,
+      totalTransactions: scopedTx.length,
+      statementsProcessed: sourceFilter === "all" ? documents.length : 1,
+    };
+  }, [transactions, sourceFilter, documents.length]);
+
   /* Export data shape */
   const exportData = useMemo(
     () =>
@@ -98,11 +125,12 @@ export default function TransactionsPage() {
         Debit: t.debit ? String(t.debit) : "",
         Credit: t.credit ? String(t.credit) : "",
         Balance: t.balance ? String(t.balance) : "",
-        Reference: t.reference || "",
+        // Reference: t.reference || "",
         Source: t._filename || "",
       })),
     [filtered]
   );
+  // console.log("exportData,",exportData)
 
   /* Per-document tabs */
   const tabItems = useMemo(() => {
@@ -149,44 +177,10 @@ export default function TransactionsPage() {
     );
   }
 
+
+
   return (
     <div className="space-y-6">
-      {/* Account metadata from OCR */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          title="Bank Name"
-          value={displayMeta(activeDocument?.bank_name)}
-          subtitle={accountMetaSubtitle}
-          icon={<Building2 className="h-5 w-5" />}
-          accentColor="bg-sky-500/10 text-sky-600 dark:text-sky-400"
-        />
-        <SummaryCard
-          title="Account Number"
-          value={displayMeta(activeDocument?.account_number)}
-          subtitle="Extracted from statement"
-          icon={<CreditCard className="h-5 w-5" />}
-          accentColor="bg-violet-500/10 text-violet-600 dark:text-violet-400"
-        />
-        <SummaryCard
-          title="Customer Number"
-          value={displayMeta(activeDocument?.customer_number)}
-          subtitle="Extracted from statement"
-          icon={<User className="h-5 w-5" />}
-          accentColor="bg-amber-500/10 text-amber-600 dark:text-amber-400"
-        />
-        <SummaryCard
-          title="Current Balance"
-          value={
-            activeDocument?.current_balance != null
-              ? formatUSD(activeDocument.current_balance)
-              : "—"
-          }
-          subtitle="Ending balance from OCR"
-          icon={<Wallet className="h-5 w-5" />}
-          accentColor="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-        />
-      </div>
-
       {/* Flow summary cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard
@@ -204,11 +198,55 @@ export default function TransactionsPage() {
         <SummaryCard
           title="Net Flow"
           value={formatUSD(stats.netFlow)}
-          subtitle={`${stats.totalTransactions} transactions across ${stats.statementsProcessed} statements`}
+          subtitle={
+            sourceFilter === "all"
+              ? `${stats.totalTransactions} transactions across ${stats.statementsProcessed} statements`
+              : `${stats.totalTransactions} transactions in this statement`
+          }
           icon={<Activity className="h-5 w-5" />}
           accentColor="bg-primary/10 text-primary"
         />
       </div>
+      {/* Account metadata from OCR */}
+      {
+        sourceFilter != "all" && (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              title="Bank Name"
+              value={displayMeta(activeDocument?.bank_name)}
+              subtitle={accountMetaSubtitle}
+              icon={<Building2 className="h-5 w-5" />}
+              accentColor="bg-sky-500/10 text-sky-600 dark:text-sky-400"
+            />
+            <SummaryCard
+              title="Account Number"
+              value={displayMeta(activeDocument?.account_number)}
+              subtitle="Extracted from statement"
+              icon={<CreditCard className="h-5 w-5" />}
+              accentColor="bg-violet-500/10 text-violet-600 dark:text-violet-400"
+            />
+            <SummaryCard
+              title="Customer Number"
+              value={displayMeta(activeDocument?.customer_number)}
+              subtitle="Extracted from statement"
+              icon={<User className="h-5 w-5" />}
+              accentColor="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+            />
+            <SummaryCard
+              title="Current Balance"
+              value={
+                activeDocument?.current_balance != null
+                  ? formatUSD(activeDocument.current_balance)
+                  : "—"
+              }
+              subtitle="Ending balance from OCR"
+              icon={<Wallet className="h-5 w-5" />}
+              accentColor="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+            />
+          </div>
+        )
+      }
+
 
       {/* Tabs for per-document / all */}
       <Tabs
@@ -246,7 +284,7 @@ export default function TransactionsPage() {
         </div>
 
         <div className="mt-4">
-          <TransactionTable data={filtered} />
+          <TransactionTable data={filtered} typeFilter={typeFilter} />
         </div>
       </Tabs>
     </div>

@@ -76,6 +76,7 @@ def apply_sauvola_threshold(image: np.ndarray, window_size: int = 25) -> np.ndar
 
 def preprocess_scanned_pdf(file_path: Path, dpi: int = 300) -> List[np.ndarray]:
     """
+    previos dpi was 300
     Complete preprocessing pipeline for scanned PDFs
     
     Args:

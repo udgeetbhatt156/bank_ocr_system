@@ -13,6 +13,7 @@ import {
 } from "@tanstack/react-table";
 import type { ColumnVisibility, TransactionRecord } from "@/lib/api";
 import { formatUSD } from "@/lib/currency";
+import { classifyTransactionRevenue } from "@/lib/revenue-filter";
 import {
   Table,
   TableBody,
@@ -71,7 +72,7 @@ const columns: ColumnDef<TxRow>[] = [
     ),
     cell: ({ getValue }) => (
       <span
-        className="block max-w-[280px] truncate text-sm"
+        className="block min-w-[260px] max-w-[520px] whitespace-normal break-words text-sm"
         title={getValue() as string}
       >
         {(getValue() as string) || "—"}
@@ -125,6 +126,40 @@ const columns: ColumnDef<TxRow>[] = [
         >
           {display}
         </span>
+      );
+    },
+  },
+  {
+    id: "revenue_status",
+    header: () => (
+      <span className="text-xs font-semibold uppercase">Revenue Filter</span>
+    ),
+    cell: ({ row }) => {
+      const tx = row.original;
+      if (!Number(tx.credit || 0)) {
+        return <span className="text-sm text-muted-foreground">-</span>;
+      }
+
+      const status = classifyTransactionRevenue(tx);
+      if (status.revenue_status === "deduction") {
+        return (
+          <Badge
+            variant="secondary"
+            className="max-w-[220px] justify-start truncate border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+            title={status.revenue_deduction_reason || "Filtered deduction"}
+          >
+            Deducted: {status.revenue_deduction_reason}
+          </Badge>
+        );
+      }
+
+      return (
+        <Badge
+          variant="secondary"
+          className="border-[var(--credit)]/20 bg-[var(--credit)]/10 text-[var(--credit)]"
+        >
+          Revenue
+        </Badge>
       );
     },
   },
@@ -202,11 +237,22 @@ export function TransactionTable({ data, typeFilter = "all" }: TransactionTableP
   const totals = useMemo(() => {
     let debit = 0;
     let credit = 0;
+    let adjustedRevenue = 0;
+    let deductions = 0;
     for (const row of data) {
       debit += Number(row.debit || 0);
-      credit += Number(row.credit || 0);
+      const rowCredit = Number(row.credit || 0);
+      credit += rowCredit;
+      if (rowCredit > 0) {
+        const status = classifyTransactionRevenue(row);
+        if (status.revenue_status === "deduction") {
+          deductions += rowCredit;
+        } else {
+          adjustedRevenue += rowCredit;
+        }
+      }
     }
-    return { debit, credit };
+    return { debit, credit, adjustedRevenue, deductions };
   }, [data]);
   // console.log('Datatatat', data[0])
   if (!data.length) {
@@ -262,6 +308,15 @@ export function TransactionTable({ data, typeFilter = "all" }: TransactionTableP
                   {formatUSD(totals.credit)}
                 </TableCell>
               )}
+              <TableCell className="py-2.5 text-xs text-muted-foreground">
+                {typeFilter !== "debit"
+                  ? `Rev ${formatUSD(totals.adjustedRevenue)}${
+                      totals.deductions > 0
+                        ? ` | Ded ${formatUSD(totals.deductions)}`
+                        : ""
+                    }`
+                  : ""}
+              </TableCell>
               <TableCell />
               {/* <TableCell /> */}
               <TableCell />

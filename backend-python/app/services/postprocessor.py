@@ -57,8 +57,12 @@ def clean_amount(raw_value: str) -> Optional[float]:
     # Remove spaces
     s = s.strip()
 
-    # Avoid treating account/reference numbers as money when OCR places them
-    # near an amount column (for example loan account "750242141").
+    # Avoid treating masked accounts, references, or narration text as money
+    # when OCR places them near amount columns.
+    if re.search(r'(?:x{2,}|\*{2,})\d{3,}', s, flags=re.IGNORECASE):
+        return None
+    if re.search(r'[A-Za-z/]', s):
+        return None
     if re.fullmatch(r'\d{7,}', s):
         return None
 
@@ -248,6 +252,26 @@ def classify_debit_credit(
 
         w_val = clean_amount(raw_w)
         d_val = clean_amount(raw_d)
+
+        row_text = ' '.join(str(c) for c in row).upper()
+        debit_like = bool(re.search(
+            r'\b(WITHDRAWAL|DEBIT|DR|TRANSFER TO|XFER TO|PAYMENT|PMT|'
+            r'PURCHASE|CHARGE|FEE|INSUFFICIENT|OVERDRAFT|ACH\s*PAYMENT|'
+            r'ACHPAYMENT|PAYPAL|UTIL PAYMT)\b',
+            row_text
+        ))
+        credit_like = bool(re.search(
+            r'\b(DEPOSIT|DEP|CREDIT|CR|TRANSFER FROM|XFER FROM|PAID IN|'
+            r'BANKCARD|MTOT DEP|ACH CREDIT)\b',
+            row_text
+        ))
+
+        # Some statements render section tables as Date | Amount | Description
+        # under a Deposits/Withdrawals header. When the debit column cell is
+        # actually narration, use the row language to decide whether the single
+        # amount belongs to debit or credit.
+        if w_val is None and d_val is not None and debit_like and not credit_like:
+            return abs(d_val), None
 
         if w_val is not None and w_val != 0:
             debit = abs(w_val)

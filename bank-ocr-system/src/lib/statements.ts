@@ -17,6 +17,10 @@ export type OcrDocumentPayload = {
   account_number?: string | null;
   customer_number?: string | null;
   current_balance?: number | null;
+  raw_credits?: number;
+  adjusted_revenue?: number;
+  revenue_deductions?: number;
+  total_debits?: number;
 };
 
 /** OCR metadata stored in Statement.rawData (works even if Prisma client is stale) */
@@ -29,6 +33,10 @@ type StoredStatementMeta = {
   account_number?: string | null;
   customer_number?: string | null;
   current_balance?: number | null;
+  raw_credits?: number | null;
+  adjusted_revenue?: number | null;
+  revenue_deductions?: number | null;
+  total_debits?: number | null;
 };
 
 type StatementWithRelations = {
@@ -69,6 +77,10 @@ function buildRawData(doc: OcrDocumentPayload): StoredStatementMeta {
     account_number: doc.account_number ?? null,
     customer_number: doc.customer_number ?? null,
     current_balance: doc.current_balance ?? null,
+    raw_credits: doc.raw_credits ?? null,
+    adjusted_revenue: doc.adjusted_revenue ?? null,
+    revenue_deductions: doc.revenue_deductions ?? null,
+    total_debits: doc.total_debits ?? null,
   };
 }
 
@@ -90,6 +102,12 @@ function parseStoredMeta(
       meta.current_balance != null ? Number(meta.current_balance) : null,
     confidence: meta.confidence ?? null,
     pdf_type: meta.pdf_type ?? null,
+    raw_credits: meta.raw_credits != null ? Number(meta.raw_credits) : null,
+    adjusted_revenue:
+      meta.adjusted_revenue != null ? Number(meta.adjusted_revenue) : null,
+    revenue_deductions:
+      meta.revenue_deductions != null ? Number(meta.revenue_deductions) : null,
+    total_debits: meta.total_debits != null ? Number(meta.total_debits) : null,
   };
 }
 
@@ -259,6 +277,10 @@ export function statementToDocumentResult(
     account_number: meta.account_number,
     customer_number: meta.customer_number,
     current_balance: meta.current_balance,
+    raw_credits: meta.raw_credits ?? undefined,
+    adjusted_revenue: meta.adjusted_revenue ?? undefined,
+    revenue_deductions: meta.revenue_deductions ?? undefined,
+    total_debits: meta.total_debits ?? undefined,
     transactions: statement.transactions.map((t) => ({
       date: formatDateForClient(t.date),
       description: t.description,

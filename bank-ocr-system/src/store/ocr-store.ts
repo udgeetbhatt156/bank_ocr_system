@@ -6,6 +6,10 @@ import {
   type ProcessResponse,
   type TransactionRecord,
 } from "@/lib/api";
+import {
+  classifyTransactionRevenue,
+  getRevenueSnapshot,
+} from "@/lib/revenue-filter";
 
 export interface UploadFile {
   id: string;
@@ -43,6 +47,8 @@ interface OcrState {
   allTransactions: () => (TransactionRecord & { _filename: string })[];
   summaryStats: () => {
     totalCredits: number;
+    adjustedRevenue: number;
+    revenueDeductions: number;
     totalDebits: number;
     netFlow: number;
     totalTransactions: number;
@@ -218,28 +224,30 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   allTransactions: () => {
     const { documents } = get();
     return documents.flatMap((doc) =>
-      doc.transactions.map((t) => ({ ...t, _filename: doc.filename }))
+      doc.transactions.map((t) => ({
+        ...t,
+        ...classifyTransactionRevenue(t),
+        _filename: doc.filename,
+      }))
     );
   },
 
   summaryStats: () => {
     const { documents } = get();
-    let totalCredits = 0;
-    let totalDebits = 0;
+    const transactions = documents.flatMap((doc) => doc.transactions);
+    const snapshot = getRevenueSnapshot(transactions);
     let totalTransactions = 0;
 
     for (const doc of documents) {
-      for (const t of doc.transactions) {
-        totalTransactions++;
-        if (t.credit) totalCredits += Number(t.credit);
-        if (t.debit) totalDebits += Number(t.debit);
-      }
+      totalTransactions += doc.transactions.length;
     }
 
     return {
-      totalCredits,
-      totalDebits,
-      netFlow: totalCredits - totalDebits,
+      totalCredits: snapshot.rawCredits,
+      adjustedRevenue: snapshot.adjustedRevenue,
+      revenueDeductions: snapshot.revenueDeductions,
+      totalDebits: snapshot.totalDebits,
+      netFlow: snapshot.netFlow,
       totalTransactions,
       statementsProcessed: documents.length,
     };

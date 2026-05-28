@@ -10,9 +10,9 @@ import { SummaryCard } from "@/components/summary-card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { formatUSD } from "@/lib/currency";
+import { getRevenueSnapshot } from "@/lib/revenue-filter";
 import type { DocumentResult } from "@/lib/api";
 import {
-  TrendingUp,
   TrendingDown,
   Activity,
   FileText,
@@ -21,6 +21,8 @@ import {
   CreditCard,
   User,
   Wallet,
+  CircleDollarSign,
+  MinusCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -43,6 +45,8 @@ function resolveActiveDocument(
 export default function TransactionsPage() {
   const { documents, allTransactions } = useOcrStore();
   const transactions = allTransactions();
+
+  console.log("transactions:", transactions, "documents:", documents);
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -100,17 +104,14 @@ export default function TransactionsPage() {
       ? transactions
       : transactions.filter((t) => t._filename === sourceFilter);
 
-    let totalCredits = 0;
-    let totalDebits = 0;
-    for (const t of scopedTx) {
-      totalCredits += Number(t.credit || 0);
-      totalDebits += Number(t.debit || 0);
-    }
+    const snapshot = getRevenueSnapshot(scopedTx);
 
     return {
-      totalCredits,
-      totalDebits,
-      netFlow: totalCredits - totalDebits,
+      totalCredits: snapshot.rawCredits,
+      adjustedRevenue: snapshot.adjustedRevenue,
+      revenueDeductions: snapshot.revenueDeductions,
+      totalDebits: snapshot.totalDebits,
+      netFlow: snapshot.netFlow,
       totalTransactions: scopedTx.length,
       statementsProcessed: sourceFilter === "all" ? documents.length : 1,
     };
@@ -124,6 +125,11 @@ export default function TransactionsPage() {
         Description: t.description || "",
         Debit: t.debit ? String(t.debit) : "",
         Credit: t.credit ? String(t.credit) : "",
+        "Revenue Status": t.revenue_status || "",
+        "Deduction Reason": t.revenue_deduction_reason || "",
+        "Adjusted Revenue": t.adjusted_revenue_amount
+          ? String(t.adjusted_revenue_amount)
+          : "",
         Balance: t.balance ? String(t.balance) : "",
         // Reference: t.reference || "",
         Source: t._filename || "",
@@ -182,12 +188,20 @@ export default function TransactionsPage() {
   return (
     <div className="space-y-6">
       {/* Flow summary cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          title="Total Credits"
+          title="Raw Credits"
           value={formatUSD(stats.totalCredits)}
-          icon={<TrendingUp className="h-5 w-5" />}
+          subtitle="All incoming deposits before filtering"
+          icon={<CircleDollarSign className="h-5 w-5" />}
           accentColor="bg-[var(--credit)]/10 text-[var(--credit)]"
+        />
+        <SummaryCard
+          title="Adjusted Revenue"
+          value={formatUSD(stats.adjustedRevenue)}
+          subtitle={`Variance ${formatUSD(stats.revenueDeductions)} removed`}
+          icon={<Activity className="h-5 w-5" />}
+          accentColor="bg-primary/10 text-primary"
         />
         <SummaryCard
           title="Total Debits"
@@ -196,15 +210,15 @@ export default function TransactionsPage() {
           accentColor="bg-[var(--debit)]/10 text-[var(--debit)]"
         />
         <SummaryCard
-          title="Net Flow"
-          value={formatUSD(stats.netFlow)}
+          title="Deductions"
+          value={formatUSD(stats.revenueDeductions)}
           subtitle={
             sourceFilter === "all"
               ? `${stats.totalTransactions} transactions across ${stats.statementsProcessed} statements`
               : `${stats.totalTransactions} transactions in this statement`
           }
-          icon={<Activity className="h-5 w-5" />}
-          accentColor="bg-primary/10 text-primary"
+          icon={<MinusCircle className="h-5 w-5" />}
+          accentColor="bg-amber-500/10 text-amber-600 dark:text-amber-400"
         />
       </div>
       {/* Account metadata from OCR */}

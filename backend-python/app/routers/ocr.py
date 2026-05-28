@@ -27,6 +27,7 @@ from app.services.postprocessor import (
     clean_amount, parse_date, classify_debit_credit, calculate_confidence
 )
 from app.services.metadata_extractor import extract_statement_metadata
+from app.services.revenue_filter import apply_revenue_filter
 
 router = APIRouter()
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def _statement_result(
     raw_text: str,
     header_idx: Optional[int] = None,
 ) -> StatementResult:
+    revenue_snapshot = apply_revenue_filter(transactions)
     meta = extract_statement_metadata(rows, transactions, header_idx=header_idx)
     return StatementResult(
         filename=filename,
@@ -55,6 +57,10 @@ def _statement_result(
         account_number=meta["account_number"],
         customer_number=meta["customer_number"],
         current_balance=meta["current_balance"],
+        raw_credits=revenue_snapshot["raw_credits"],
+        adjusted_revenue=revenue_snapshot["adjusted_revenue"],
+        revenue_deductions=revenue_snapshot["revenue_deductions"],
+        total_debits=revenue_snapshot["total_debits"],
     )
 
 
@@ -218,6 +224,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
         warnings.append("Column mapping failed attempting line-by-line parse")
         # Fall back to line-by-line heuristic parse
         transactions = _parse_lines_heuristic(data_rows, file_path.name)
+        transactions.extend(_parse_check_detail_rows(rows))
         confidence = calculate_confidence([t.dict() for t in transactions])
         raw_text = "\n".join(" | ".join(r) for r in rows[:20])
         LOGGER.info(f"[{file_path.name}] heuristic → {len(transactions)} transactions")
@@ -284,6 +291,8 @@ def process_single_statement(file_path: Path) -> StatementResult:
             reference=reference,
             source_line=" | ".join(str(c) for c in row),
         ))
+
+    transactions.extend(_parse_check_detail_rows(rows))
 
     # Step 7: Confidence + summary
     confidence = calculate_confidence([t.dict() for t in transactions])
@@ -455,6 +464,44 @@ def _parse_additions_subtractions_rows(rows: List[List[str]]) -> List[Transactio
             reference=None,
             source_line=" | ".join(str(c) for c in row),
         ))
+
+    return transactions
+
+
+def _parse_check_detail_rows(rows: List[List[str]]) -> List[Transaction]:
+    """Parse check-detail rows like Number/Date/Amount pairs as debits."""
+    transactions: List[Transaction] = []
+    seen = set()
+
+    pattern = re.compile(
+        r"Number:\s*([A-Za-z0-9-]+)\s+Date:\s*([0-9/.\-]+)\s+Amount:\s*\$?\s*([0-9,]+\.\d{2})",
+        re.IGNORECASE,
+    )
+
+    for row in rows:
+        row_text = " ".join(str(c) for c in row)
+        for match in pattern.finditer(row_text):
+            check_number, raw_date, raw_amount = match.groups()
+            date_str = parse_date(raw_date)
+            amount = clean_amount(raw_amount)
+            if not date_str or amount is None:
+                continue
+
+            key = (check_number, date_str, round(abs(amount), 2))
+            if key in seen:
+                continue
+            seen.add(key)
+
+            description = f"Check {check_number}"
+            transactions.append(Transaction(
+                date=date_str,
+                description=description,
+                debit=abs(amount),
+                credit=None,
+                balance=None,
+                reference=check_number,
+                source_line=match.group(0),
+            ))
 
     return transactions
 

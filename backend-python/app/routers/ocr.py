@@ -272,6 +272,9 @@ def process_single_statement(file_path: Path) -> StatementResult:
         # Amounts
         debit, credit = classify_debit_credit(row, col_map)
 
+        if debit is None and credit is None:
+            continue 
+
         # Balance
         balance: Optional[float] = None
         if 'balance' in col_map and col_map['balance'] < len(row):

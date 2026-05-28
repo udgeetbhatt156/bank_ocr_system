@@ -165,11 +165,17 @@ export default function DashboardLayout({
     }
   }, [isLoading, isAuthenticated, router]);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      hydrateFromServer();
-    }
-  }, [isAuthenticated, hydrateFromServer]);
+useEffect(() => {
+  if (isAuthenticated && pathname !== "/history") {
+    hydrateFromServer();
+  }
+}, [isAuthenticated, pathname, hydrateFromServer]);
+
+  // useEffect(() => {
+  //   if (isAuthenticated) {
+  //     hydrateFromServer();
+  //   }
+  // }, [isAuthenticated, hydrateFromServer]);
 
   const handleLogout = useCallback(async () => {
     clearOcrResults();

@@ -293,21 +293,43 @@ export function statementToDocumentResult(
   };
 }
 
-export async function fetchUserDocuments(
+  // const statements = await prisma.statement.findMany({
+  //   where: { account: { userId } },
+  //   include: {
+  //     transactions: { orderBy: { date: "asc" } },
+  //     account: true,
+  //   },
+  //   orderBy: { uploadedAt: "desc" },
+  // });
+  export async function fetchUserDocuments(
   userId: string
 ): Promise<DocumentResult[]> {
   const statements = await prisma.statement.findMany({
     where: { account: { userId } },
-    include: {
-      transactions: { orderBy: { date: "asc" } },
-      account: true,
+    select: {
+      id: true,
+      fileName: true,
+      uploadedAt: true,
+      processedAt: true,
+      status: true,
+      rawData: true,
+      account: {
+        select: {
+          bankName: true,
+          accountNumber: true,
+          customerNumber: true,
+        },
+      },
+      _count: {
+        select: {
+          transactions: true,
+        },
+      },
     },
     orderBy: { uploadedAt: "desc" },
   });
 
-  return statements.map((s: StatementWithRelations) =>
-    statementToDocumentResult(s)
-  );
+  return statements.map((s) => statementToDocumentResult(s));
 }
 
 export async function getStatementForUser(statementId: string, userId: string) {

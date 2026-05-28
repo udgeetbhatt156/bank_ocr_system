@@ -224,7 +224,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   allTransactions: () => {
     const { documents } = get();
     return documents.flatMap((doc) =>
-      doc.transactions.map((t) => ({
+      doc.transactions.filter((t) => Number(t.credit || 0)>0 || Number(t.debit || 0) > 0)
+    .map((t) => ({
         ...t,
         ...classifyTransactionRevenue(t),
         _filename: doc.filename,
@@ -234,7 +235,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
 
   summaryStats: () => {
     const { documents } = get();
-    const transactions = documents.flatMap((doc) => doc.transactions);
+    const transactions = documents.flatMap((doc) => doc.transactions).filter((t) => Number(t.credit || 0)>0 || Number(t.debit || 0) > 0);
     const snapshot = getRevenueSnapshot(transactions);
     let totalTransactions = 0;
 

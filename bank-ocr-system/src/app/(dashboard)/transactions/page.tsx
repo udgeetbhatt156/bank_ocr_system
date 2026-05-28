@@ -46,7 +46,7 @@ export default function TransactionsPage() {
   const { documents, allTransactions } = useOcrStore();
   const transactions = allTransactions();
 
-  console.log("transactions:", transactions, "documents:", documents);
+  // console.log("transactions:", transactions, "documents:", documents);
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");

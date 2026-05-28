@@ -43,7 +43,10 @@ export default function HistoryPage() {
     try {
       const { statements: list } = await apiFetchStatementList();
       setStatements(list);
-      setSelectedId((prev) => prev ?? list[0]?.id ?? null);
+      // setSelectedId((prev) => prev ?? list[0]?.id ?? null);
+      if (selectedId && !list.some((item) => item.id === selectedId)) {
+      setSelectedId(null);
+}
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to load statement history"

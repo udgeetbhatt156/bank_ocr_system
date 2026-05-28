@@ -132,7 +132,7 @@ export default function TransactionsPage() {
           : "",
         Balance: t.balance ? String(t.balance) : "",
         // Reference: t.reference || "",
-        Source: t._filename || "",
+        // Source: t._filename || "",
       })),
     [filtered]
   );

@@ -193,17 +193,17 @@ const columns: ColumnDef<TxRow>[] = [
   //     );
   //   },
   // },
-  {
-    accessorKey: "_filename",
-    header: () => (
-      <span className="text-xs font-semibold uppercase">Source</span>
-    ),
-    cell: ({ getValue }) => (
-      <span className="block max-w-[160px] truncate text-xs text-muted-foreground">
-        {getValue() as string}
-      </span>
-    ),
-  },
+  // {
+  //   accessorKey: "_filename",
+  //   header: () => (
+  //     <span className="text-xs font-semibold uppercase">Source</span>
+  //   ),
+  //   cell: ({ getValue }) => (
+  //     <span className="block max-w-[160px] truncate text-xs text-muted-foreground">
+  //       {getValue() as string}
+  //     </span>
+  //   ),
+  // },
 ];
 
 export function TransactionTable({ data, typeFilter = "all" }: TransactionTableProps) {
@@ -318,7 +318,7 @@ export function TransactionTable({ data, typeFilter = "all" }: TransactionTableP
                   : ""}
               </TableCell>
               <TableCell />
-              {/* <TableCell /> */}
+              <TableCell />
               <TableCell />
             </TableRow>
           </TableBody>

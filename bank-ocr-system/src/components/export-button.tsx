@@ -19,7 +19,7 @@ interface ExportRow {
   Credit: string;
   Balance: string;
   // Reference: string;
-  Source: string;
+  // Source: string;
 }
 
 interface ExportButtonProps {

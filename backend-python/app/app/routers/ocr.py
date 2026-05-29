@@ -491,8 +491,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
 
     if pdf_type == "scanned" or not rows:
         try:
-            # Optimized: Use 200 DPI for faster processing with excellent accuracy
-            images = preprocess_scanned_pdf(file_path, dpi=200)
+            images = preprocess_scanned_pdf(file_path, dpi=300)
             for img in images:
                 ocr_rows = extract_ocr_rows(img)
                 if ocr_rows:

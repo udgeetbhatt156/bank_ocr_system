@@ -21,6 +21,15 @@ export type OcrDocumentPayload = {
   adjusted_revenue?: number;
   revenue_deductions?: number;
   total_debits?: number;
+  // Duplicate detection fields
+  file_hash?: string | null;
+  content_hash?: string | null;
+  fingerprint?: string | null;
+  is_duplicate?: boolean;
+  duplicate_type?: string | null;
+  duplicate_of?: string | null;
+  duplicate_confidence?: number | null;
+  duplicate_message?: string | null;
 };
 
 /** OCR metadata stored in Statement.rawData (works even if Prisma client is stale) */
@@ -193,6 +202,41 @@ export async function persistOcrDocument(
         },
       });
 
+  // Check for duplicate by file hash (if provided by OCR service)
+  if ((doc as any).file_hash) {
+    const duplicateByFileHash = await prisma.statement.findFirst({
+      where: {
+        fileHash: (doc as any).file_hash,
+        accountId: account.id,
+      },
+      select: { id: true, fileName: true },
+    });
+
+    if (duplicateByFileHash) {
+      throw new Error(
+        `Duplicate file detected: This exact file was already uploaded as "${duplicateByFileHash.fileName}"`
+      );
+    }
+  }
+
+  // Check for duplicate by content hash (if provided by OCR service)
+  if ((doc as any).content_hash) {
+    const duplicateByContentHash = await prisma.statement.findFirst({
+      where: {
+        contentHash: (doc as any).content_hash,
+        accountId: account.id,
+      },
+      select: { id: true, fileName: true },
+    });
+
+    if (duplicateByContentHash) {
+      throw new Error(
+        `Duplicate content detected: This statement content was already processed in "${duplicateByContentHash.fileName}"`
+      );
+    }
+  }
+
+  // Check for duplicate by filename (legacy check)
   const existing = await prisma.statement.findFirst({
     where: {
       fileName: doc.filename,
@@ -203,6 +247,8 @@ export async function persistOcrDocument(
 
   const statementFields = {
     fileName: doc.filename,
+    fileHash: (doc as any).file_hash || null,
+    contentHash: (doc as any).content_hash || null,
     processedAt: new Date(),
     status: doc.transactions.length > 0 ? "processed" : "failed",
     rawData: buildRawData(doc),

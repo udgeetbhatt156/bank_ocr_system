@@ -70,11 +70,11 @@ export async function POST(request: Request) {
     }
 
     const response = await axios.post(
-      `${PYTHON_OCR_URL}/api/ocr/process`,
+      `${PYTHON_OCR_URL}/api/ocr/process-with-duplicate-check`,
       upstreamForm,
       {
         headers: upstreamForm.getHeaders(),
-        timeout: 600_000,
+        timeout: 1200_000,
       }
     );
 

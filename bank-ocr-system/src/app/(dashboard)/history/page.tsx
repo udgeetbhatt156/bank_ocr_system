@@ -45,8 +45,8 @@ export default function HistoryPage() {
       setStatements(list);
       // setSelectedId((prev) => prev ?? list[0]?.id ?? null);
       if (selectedId && !list.some((item) => item.id === selectedId)) {
-      setSelectedId(null);
-}
+        setSelectedId(null);
+      }
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to load statement history"
@@ -200,11 +200,10 @@ export default function HistoryPage() {
                 return (
                   <div
                     key={item.id}
-                    className={`flex items-start gap-1 rounded-xl border p-1 transition-all ${
-                      active
-                        ? "border-primary/40 bg-primary/5 shadow-sm"
-                        : "border-transparent bg-muted/30 hover:bg-muted/50"
-                    }`}
+                    className={`flex items-start gap-1 rounded-xl border p-1 transition-all ${active
+                      ? "border-primary/40 bg-primary/5 shadow-sm"
+                      : "border-transparent bg-muted/30 hover:bg-muted/50"
+                      }`}
                   >
                     <button
                       type="button"

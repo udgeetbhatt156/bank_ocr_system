@@ -23,38 +23,20 @@ paddle_ocr = None
 
 
 def _get_paddle_ocr():
-    """
-    Lazy initialization of PaddleOCR with optimized settings for speed.
-    
-    PERFORMANCE OPTIMIZATIONS:
-    - Disabled orientation classification (faster)
-    - Disabled document unwarping (faster)
-    - Disabled textline orientation (faster)
-    - Uses CPU by default (GPU optional via environment variable)
-    """
     global paddle_ocr
     if paddle_ocr is None:
         from paddleocr import PaddleOCR
 
         try:
-            # Optimized settings for maximum speed while maintaining accuracy
             paddle_ocr = PaddleOCR(
                 lang="en",
-                use_angle_cls=False,  # Disable angle classification for speed
-                use_gpu=False,  # CPU mode (set to True if GPU available)
-                show_log=False,  # Disable verbose logging for speed
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
             )
         except TypeError:
             # PaddleOCR 2.x compatibility.
-            paddle_ocr = PaddleOCR(
-                lang="en",
-                use_angle_cls=False,
-                use_gpu=False,
-                show_log=False
-            )
+            paddle_ocr = PaddleOCR(lang="en")
     return paddle_ocr
 
 

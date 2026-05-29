@@ -88,23 +88,15 @@ def assess_image_quality(image: np.ndarray) -> dict:
 
 def denoise_image(image: np.ndarray) -> np.ndarray:
     """
-    Apply optimized bilateral filter for denoising.
-    
-    PERFORMANCE OPTIMIZATION:
-    - Reduced filter diameter from 9 to 5 (faster)
-    - Bilateral filtering preserves edges while removing noise
-    
-    Args:
-        image: Input image (color or grayscale)
-        
-    Returns:
-        Denoised image
+    Apply bilateral filter for denoising.
+
+    Bilateral filtering preserves edges better than fastNlMeansDenoising,
+    which is critical for preserving thin text strokes in bank statements.
     """
-    # Optimized: Smaller filter diameter for faster processing
     if len(image.shape) == 3:
-        return cv2.bilateralFilter(image, d=5, sigmaColor=50, sigmaSpace=50)
+        return cv2.bilateralFilter(image, d=9, sigmaColor=75, sigmaSpace=75)
     else:
-        return cv2.bilateralFilter(image, d=5, sigmaColor=50, sigmaSpace=50)
+        return cv2.bilateralFilter(image, d=9, sigmaColor=75, sigmaSpace=75)
 
 
 def apply_clahe(image: np.ndarray) -> np.ndarray:
@@ -162,23 +154,18 @@ def remove_scan_artifacts(image: np.ndarray) -> np.ndarray:
     return cleaned
 
 
-def preprocess_scanned_pdf(file_path: Path, dpi: int = 200) -> List[np.ndarray]:
+def preprocess_scanned_pdf(file_path: Path, dpi: int = 300) -> List[np.ndarray]:
     """
-    Optimized preprocessing pipeline for scanned PDFs.
-    
-    PERFORMANCE OPTIMIZATIONS:
-    - Reduced DPI from 300 to 200 (40% faster, still excellent accuracy)
-    - Adaptive processing based on quality assessment
-    - Minimal preprocessing for good quality scans
+    Complete adaptive preprocessing pipeline for scanned PDFs.
 
     Args:
         file_path: Path to PDF file
-        dpi: Resolution for PDF to image conversion (200 = optimal speed/accuracy)
+        dpi: Resolution for PDF to image conversion (300 = industry standard)
 
     Returns:
         List of preprocessed images (one per page)
     """
-    # Convert PDF to images at 200 DPI (optimal balance of speed and accuracy)
+    # Convert PDF to images at 300 DPI (critical for OCR accuracy)
     images = convert_from_path(str(file_path), dpi=dpi)
 
     processed_images = []
@@ -186,16 +173,14 @@ def preprocess_scanned_pdf(file_path: Path, dpi: int = 200) -> List[np.ndarray]:
         # Convert PIL to OpenCV format
         img = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
-        # Step 1: Remove black borders from scan (fast operation)
+        # Step 1: Remove black borders from scan
         img = remove_borders(img)
 
-        # Step 2: Assess image quality to decide further processing
-        quality = assess_image_quality(img)
+        # Step 2: Deskew
+        img = deskew_image(img)
 
-        # Step 3: Only deskew if image appears skewed (saves time on straight scans)
-        # Skip deskewing for high-quality scans to save processing time
-        if quality["contrast_ratio"] < 0.3 or quality["noise_level"] > 0.4:
-            img = deskew_image(img)
+        # Step 3: Assess image quality to decide further processing
+        quality = assess_image_quality(img)
 
         # Step 4: Adaptive contrast enhancement
         # Only apply CLAHE if contrast is poor (faded documents)
@@ -204,15 +189,16 @@ def preprocess_scanned_pdf(file_path: Path, dpi: int = 200) -> List[np.ndarray]:
 
         # Step 5: Adaptive denoising
         # Only denoise if noise level is significant (noisy scans, fax copies)
-        if quality["noise_level"] > 0.4:
+        if quality["noise_level"] > 0.3:
             img = denoise_image(img)
 
         # Step 6: Remove scan artifacts (dots, specks)
-        # Only for very noisy images to avoid removing legitimate content
-        if quality["noise_level"] > 0.6:
+        # Only for noisy images to avoid removing legitimate content
+        if quality["noise_level"] > 0.5:
             img = remove_scan_artifacts(img)
 
         # Keep the color image for PaddleOCR 3.x which handles color well.
+        # PaddleOCR's internal preprocessing is tuned for color input.
         processed_images.append(img)
 
     return processed_images

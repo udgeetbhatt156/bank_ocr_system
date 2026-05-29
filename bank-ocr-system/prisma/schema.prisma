@@ -36,6 +36,8 @@ model Statement {
   id             String        @id @default(cuid())
   fileName       String
   filePath       String
+  fileHash       String?       // SHA-256 hash of file content for duplicate detection
+  contentHash    String?       // Hash of extracted transaction data
   uploadedAt     DateTime      @default(now())
   processedAt    DateTime?
   status         String        @default("pending")
@@ -49,9 +51,13 @@ model Statement {
   account        BankAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   rawData        Json?
   transactions   Transaction[]
+  isDuplicate    Boolean       @default(false)
+  duplicateOfId  String?       // Reference to original statement if this is a duplicate
 
   @@index([accountId])
   @@index([fileName])
+  @@index([fileHash])
+  @@index([contentHash])
 }
 
 model Transaction {

@@ -422,7 +422,7 @@ def _parse_multicolumn_rows(
     return transactions
 
 
-# ─── Format detection ─────────────────────────────────────────────────────────
+# Format detection 
 
 def _detect_format(col_map: Dict, rows: List[List[str]], header_idx: int) -> str:
     """

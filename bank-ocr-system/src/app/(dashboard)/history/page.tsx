@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import {
   apiDeleteStatement,
   apiFetchStatement,
-  apiFetchStatementList,
   type DocumentResult,
   type StatementListItem,
 } from "@/lib/api";
@@ -31,50 +30,66 @@ import { toast } from "sonner";
 
 export default function HistoryPage() {
   const pathname = usePathname();
+  const documents = useOcrStore((s) => s.documents);
+  const statementList = useOcrStore((s) => s.statementList);
+  const statementListLoaded = useOcrStore((s) => s.statementListLoaded);
+  const isLoadingStatementList = useOcrStore((s) => s.isLoadingStatementList);
+  const loadStatementList = useOcrStore((s) => s.loadStatementList);
+
   const [statements, setStatements] = useState<StatementListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocumentResult | null>(null);
-  const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const detailCache = useRef<Map<string, DocumentResult>>(new Map());
 
-  const loadList = useCallback(async () => {
-    setIsLoadingList(true);
-    try {
-      const { statements: list } = await apiFetchStatementList();
-      setStatements(list);
-      // setSelectedId((prev) => prev ?? list[0]?.id ?? null);
-      if (selectedId && !list.some((item) => item.id === selectedId)) {
-        setSelectedId(null);
-      }
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to load statement history"
-      );
-    } finally {
-      setIsLoadingList(false);
+  // Show cached list instantly when available
+  useEffect(() => {
+    if (statementList.length) {
+      setStatements(statementList);
     }
-  }, []);
+  }, [statementList]);
+
+  const refreshList = useCallback(
+    async (force = false) => {
+      try {
+        const list = await loadStatementList(force);
+        setStatements(list);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to load statement history"
+        );
+      }
+    },
+    [loadStatementList]
+  );
 
   useEffect(() => {
     if (pathname === "/history") {
-      loadList();
-    }
-  }, [pathname, loadList]);
-
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && pathname === "/history") {
-        loadList();
+      if (statementListLoaded && statementList.length) {
+        setStatements(statementList);
       }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [pathname, loadList]);
+      void refreshList(!statementListLoaded);
+    }
+  }, [pathname, refreshList, statementListLoaded, statementList.length]);
 
+  // Load detail: use in-memory cache → ocr documents → API
   useEffect(() => {
     if (!selectedId) {
       setSelectedDoc(null);
+      return;
+    }
+
+    const cached = detailCache.current.get(selectedId);
+    if (cached) {
+      setSelectedDoc(cached);
+      return;
+    }
+
+    const fromStore = documents.find((d) => d.id === selectedId);
+    if (fromStore?.transactions.length) {
+      detailCache.current.set(selectedId, fromStore);
+      setSelectedDoc(fromStore);
       return;
     }
 
@@ -83,7 +98,10 @@ export default function HistoryPage() {
 
     apiFetchStatement(selectedId)
       .then(({ document }) => {
-        if (!cancelled) setSelectedDoc(document);
+        if (!cancelled) {
+          detailCache.current.set(selectedId, document);
+          setSelectedDoc(document);
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -100,9 +118,11 @@ export default function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, documents]);
 
   const selectedMeta = statements.find((s) => s.id === selectedId);
+  const showInitialSkeleton =
+    !statementListLoaded && isLoadingStatementList && statements.length === 0;
 
   const handleDelete = async (id: string, fileName: string) => {
     const confirmed = window.confirm(
@@ -114,10 +134,11 @@ export default function HistoryPage() {
     try {
       await apiDeleteStatement(id);
 
+      detailCache.current.delete(id);
       setStatements((prev) => {
         const next = prev.filter((s) => s.id !== id);
         if (selectedId === id) {
-          setSelectedId(next[0]?.id ?? null);
+          setSelectedId(null);
           setSelectedDoc(null);
         }
         return next;
@@ -125,6 +146,7 @@ export default function HistoryPage() {
 
       useOcrStore.setState((state) => ({
         documents: state.documents.filter((d) => d.id !== id),
+        statementList: state.statementList.filter((s) => s.id !== id),
       }));
 
       toast.success("Statement deleted");
@@ -147,8 +169,16 @@ export default function HistoryPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={loadList} className="gap-2">
-            <RefreshCw className="h-4 w-4" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refreshList(true)}
+            disabled={isLoadingStatementList}
+            className="gap-2"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isLoadingStatementList ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
           <Link href="/upload">
@@ -160,7 +190,7 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {isLoadingList ? (
+      {showInitialSkeleton ? (
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
           <Skeleton className="h-96 rounded-2xl" />
           <Skeleton className="h-96 rounded-2xl" />
@@ -188,10 +218,15 @@ export default function HistoryPage() {
         </motion.div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-          {/* Statement list */}
           <div className="space-y-2 rounded-2xl border border-border bg-card p-3">
             <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {statements.length} statement{statements.length !== 1 ? "s" : ""}
+              {isLoadingStatementList && (
+                <span className="ml-2 inline-flex items-center gap-1 normal-case text-primary">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Updating…
+                </span>
+              )}
             </p>
             <div className="max-h-[calc(100vh-220px)] space-y-2 overflow-y-auto pr-1">
               {statements.map((item) => {
@@ -200,10 +235,11 @@ export default function HistoryPage() {
                 return (
                   <div
                     key={item.id}
-                    className={`flex items-start gap-1 rounded-xl border p-1 transition-all ${active
-                      ? "border-primary/40 bg-primary/5 shadow-sm"
-                      : "border-transparent bg-muted/30 hover:bg-muted/50"
-                      }`}
+                    className={`flex items-start gap-1 rounded-xl border p-1 transition-all ${
+                      active
+                        ? "border-primary/40 bg-primary/5 shadow-sm"
+                        : "border-transparent bg-muted/30 hover:bg-muted/50"
+                    }`}
                   >
                     <button
                       type="button"
@@ -255,7 +291,6 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* Detail panel */}
           <div className="min-w-0 space-y-4">
             {selectedMeta && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3">

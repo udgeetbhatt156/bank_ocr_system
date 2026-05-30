@@ -44,6 +44,8 @@ export interface DocumentResult {
   adjusted_revenue?: number;
   revenue_deductions?: number;
   total_debits?: number;
+  confidence?: number | null;
+  pdf_type?: string | null;
 }
 
 export interface StatementListItem {
@@ -66,6 +68,7 @@ export interface ProcessResponse {
   status: string;
   documents: DocumentResult[];
   warnings?: string[];
+  skippedDuplicates?: string[];
 }
 
 //Helpers

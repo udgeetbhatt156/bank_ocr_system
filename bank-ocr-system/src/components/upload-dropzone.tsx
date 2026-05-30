@@ -18,6 +18,7 @@ import {
   Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AccuracyBadge } from "@/components/accuracy-badge";
 import { cn } from "@/lib/utils";
 
 function formatFileSize(bytes: number) {
@@ -58,7 +59,7 @@ const STATUS_CONFIG = {
 } as const;
 
 export function UploadDropzone() {
-  const { files, addFiles, removeFile, isProcessing } = useOcrStore();
+  const { files, documents, addFiles, removeFile, isProcessing } = useOcrStore();
 
   const onDrop = useCallback(
     (accepted: File[]) => {
@@ -194,6 +195,9 @@ export function UploadDropzone() {
             <div className="max-h-72 space-y-1.5 overflow-y-auto rounded-xl border border-border bg-card p-2">
               {files.map((f) => {
                 const cfg = STATUS_CONFIG[f.status];
+                const matchedDoc = documents.find(
+                  (d) => d.filename.toLowerCase() === f.file.name.toLowerCase()
+                );
                 return (
                   <motion.div
                     key={f.id}
@@ -239,7 +243,7 @@ export function UploadDropzone() {
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
                       )}
                       {f.status === "success" && (
-                        <CheckCircle2 className="h-4 w-4 text-[var(--credit)]" />
+                        <AccuracyBadge confidence={matchedDoc?.confidence} showCheck />
                       )}
                       {f.status === "error" && (
                         <span className="flex items-center gap-1 text-xs font-medium text-[var(--debit)]">

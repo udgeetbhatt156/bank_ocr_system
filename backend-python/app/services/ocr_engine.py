@@ -262,7 +262,7 @@ def extract_ocr_rows(image: np.ndarray) -> List[List[str]]:
         if hasattr(ocr, "predict"):
             result = ocr.predict(image)
         else:
-            result = ocr.ocr(image, cls=True)
+            result = ocr.ocr(image, cls=False)
         return ocr_lines_to_rows(_normalize_ocr_lines(result))
     except Exception as e:
         LOGGER.error(f"Error in PaddleOCR: {e}")

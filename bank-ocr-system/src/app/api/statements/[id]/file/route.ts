@@ -2,8 +2,8 @@ import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 
-import { getAuthUser } from "@/lib/auth-server";
-import { getStatementForUser } from "@/lib/statements";
+import { getAuthUserId } from "@/lib/auth-server";
+import { getStatementFilePath } from "@/lib/statements";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -28,24 +28,24 @@ function contentTypeForFile(fileName: string) {
 }
 
 export async function GET(_request: Request, context: RouteContext) {
-  const user = await getAuthUser();
-  if (!user) {
+  const userId = await getAuthUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await context.params;
-  const statement = await getStatementForUser(id, user.id);
+  const fileInfo = await getStatementFilePath(id, userId);
 
-  if (!statement) {
+  if (!fileInfo) {
     return NextResponse.json({ error: "Statement not found" }, { status: 404 });
   }
 
   try {
-    const buffer = await fs.readFile(statement.filePath);
+    const buffer = await fs.readFile(fileInfo.filePath);
     return new NextResponse(buffer, {
       headers: {
-        "Content-Type": contentTypeForFile(statement.fileName),
-        "Content-Disposition": `inline; filename="${statement.fileName}"`,
+        "Content-Type": contentTypeForFile(fileInfo.fileName),
+        "Content-Disposition": `inline; filename="${fileInfo.fileName}"`,
         "Cache-Control": "private, max-age=3600",
       },
     });

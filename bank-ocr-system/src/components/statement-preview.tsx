@@ -19,6 +19,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AccuracyBadge } from "@/components/accuracy-badge";
 import { cn } from "@/lib/utils";
 import { formatUSD } from "@/lib/currency";
 
@@ -185,6 +186,9 @@ function FilePreview({
               <CheckCircle2 className="h-3 w-3" /> Scanned
             </span>
           )}
+          {isProcessed && doc?.confidence != null && (
+            <AccuracyBadge confidence={doc.confidence} className="py-0.5 text-[10px]" />
+          )}
           {isProcessing && (
             <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
               <ScanLine className="h-3 w-3 animate-pulse" /> Processing
@@ -287,6 +291,7 @@ function FilePreview({
                     <span className="text-sm font-semibold text-foreground">
                       {doc.transactions.length} transactions extracted
                     </span>
+                    <AccuracyBadge confidence={doc.confidence} showCheck />
                   </div>
                 )}
               </div>

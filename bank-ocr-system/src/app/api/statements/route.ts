@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 
-import { getAuthUser } from "@/lib/auth-server";
+import { getAuthUserId } from "@/lib/auth-server";
 import {
   fetchUserDocuments,
   fetchUserStatementList,
 } from "@/lib/statements";
 
 export async function GET(request: Request) {
-  const user = await getAuthUser();
-  if (!user) {
+  const userId = await getAuthUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -16,10 +16,24 @@ export async function GET(request: Request) {
   const view = searchParams.get("view");
 
   if (view === "list") {
-    const statements = await fetchUserStatementList(user.id);
-    return NextResponse.json({ statements });
+    const statements = await fetchUserStatementList(userId);
+    return NextResponse.json(
+      { statements },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=15, stale-while-revalidate=30",
+        },
+      }
+    );
   }
 
-  const documents = await fetchUserDocuments(user.id);
-  return NextResponse.json({ status: "success", documents });
+  const documents = await fetchUserDocuments(userId);
+  return NextResponse.json(
+    { status: "success", documents },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=15, stale-while-revalidate=30",
+      },
+    }
+  );
 }

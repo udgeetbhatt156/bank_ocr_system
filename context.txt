@@ -510,7 +510,6 @@ Implement Export functionality (CSV + Excel)
 Phase 5: Polish & Demo Ready
 
 Add smooth animations (Framer Motion)
-Add fake processing delay for nice demo experience
 Implement responsive design
 Final UI/UX polishing to make it client-impressive
 

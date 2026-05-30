@@ -9,7 +9,7 @@ export type AuthUser = {
   name: string | null;
 };
 
-export async function getAuthUser(): Promise<AuthUser | null> {
+export async function getAuthUserId(): Promise<string | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get("bankocr_session")?.value;
   if (!token) return null;
@@ -17,8 +17,17 @@ export async function getAuthUser(): Promise<AuthUser | null> {
   try {
     const payload = await verifyToken(token);
     const userId = String(payload.sub || "");
-    if (!userId) return null;
+    return userId || null;
+  } catch {
+    return null;
+  }
+}
 
+export async function getAuthUser(): Promise<AuthUser | null> {
+  const userId = await getAuthUserId();
+  if (!userId) return null;
+
+  try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, name: true },

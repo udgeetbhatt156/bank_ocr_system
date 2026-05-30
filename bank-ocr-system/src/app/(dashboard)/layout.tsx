@@ -166,8 +166,11 @@ export default function DashboardLayout({
   }, [isLoading, isAuthenticated, router]);
 
 useEffect(() => {
-  if (isAuthenticated && pathname !== "/history") {
-    hydrateFromServer();
+  if (isAuthenticated) {
+    void useOcrStore.getState().loadStatementList();
+    if (pathname !== "/history") {
+      hydrateFromServer();
+    }
   }
 }, [isAuthenticated, pathname, hydrateFromServer]);
 

@@ -1,42 +1,40 @@
 import { NextResponse } from "next/server";
 
-import { getAuthUser } from "@/lib/auth-server";
+import { getAuthUserId } from "@/lib/auth-server";
 import {
   deleteStatementForUser,
+  formatStatementDetail,
   getStatementForUser,
-  statementToDocumentResult,
 } from "@/lib/statements";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, context: RouteContext) {
-  const user = await getAuthUser();
-  if (!user) {
+  const userId = await getAuthUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await context.params;
-  const statement = await getStatementForUser(id, user.id);
+  const statement = await getStatementForUser(id, userId);
 
   if (!statement) {
     return NextResponse.json({ error: "Statement not found" }, { status: 404 });
   }
 
   return NextResponse.json({
-    document: statementToDocumentResult(
-      statement as Parameters<typeof statementToDocumentResult>[0]
-    ),
+    document: formatStatementDetail(statement),
   });
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const user = await getAuthUser();
-  if (!user) {
+  const userId = await getAuthUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await context.params;
-  const deleted = await deleteStatementForUser(id, user.id);
+  const deleted = await deleteStatementForUser(id, userId);
 
   if (!deleted) {
     return NextResponse.json({ error: "Statement not found" }, { status: 404 });

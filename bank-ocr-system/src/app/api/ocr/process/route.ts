@@ -85,6 +85,7 @@ export async function POST(request: Request) {
 
     const savedDocuments = [];
     const persistErrors: string[] = [];
+    const skippedDuplicates: string[] = [];
 
     for (let i = 0; i < ocrData.documents.length; i++) {
       const doc = ocrData.documents[i];
@@ -96,7 +97,14 @@ export async function POST(request: Request) {
       }
 
       try {
-        const statementId = await persistOcrDocument(user.id, doc, buffer);
+        const { statementId, skippedDuplicate, duplicateOf } =
+          await persistOcrDocument(user.id, doc, buffer);
+
+        if (skippedDuplicate) {
+          skippedDuplicates.push(
+            `${doc.filename}: already saved as "${duplicateOf}"`
+          );
+        }
 
         const statement = await prisma.statement.findFirst({
           where: { id: statementId, account: { userId: user.id } },
@@ -110,7 +118,9 @@ export async function POST(request: Request) {
           throw new Error("Statement saved but could not be loaded");
         }
 
-        savedDocuments.push(statementToDocumentResult(statement));
+        if (!skippedDuplicate) {
+          savedDocuments.push(statementToDocumentResult(statement));
+        }
       } catch (persistErr) {
         const msg =
           persistErr instanceof Error ? persistErr.message : String(persistErr);
@@ -119,7 +129,7 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!savedDocuments.length && persistErrors.length) {
+    if (!savedDocuments.length && persistErrors.length && !skippedDuplicates.length) {
       return NextResponse.json(
         {
           error: "Failed to save statements to database",
@@ -129,10 +139,16 @@ export async function POST(request: Request) {
       );
     }
 
+    const warnings = [
+      ...persistErrors,
+      ...skippedDuplicates,
+    ].filter(Boolean);
+
     return NextResponse.json({
       status: "success",
       documents: savedDocuments,
-      warnings: persistErrors.length ? persistErrors : undefined,
+      warnings: warnings.length ? warnings : undefined,
+      skippedDuplicates: skippedDuplicates.length ? skippedDuplicates : undefined,
     });
   } catch (error) {
     console.error("[OCR Process] Error:", error);

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import logging
 import re
+import uuid
 
 import aiofiles
 import pdfplumber
@@ -17,12 +18,7 @@ from app.core.config import UPLOAD_DIR
 from app.models.schemas import OCRResponse, StatementResult, Transaction
 from app.services.ingestion import detect_pdf_type
 from app.services.preprocessor import preprocess_scanned_pdf
-from app.services.ocr_engine import (
-    extract_digital_pdf,
-    extract_ocr_rows,
-    run_paddleocr_structure,
-    parse_ocr_text_to_rows,
-)
+from app.services.ocr_engine import extract_ocr_rows
 from app.services.table_parser import (
     map_columns,
     merge_wrapped_rows,
@@ -36,10 +32,10 @@ from app.services.postprocessor import (
     classify_signed_amount,
     calculate_confidence,
     detect_statement_period,
+    deduplicate_transactions,
 )
 from app.services.metadata_extractor import extract_statement_metadata
 from app.services.revenue_filter import apply_revenue_filter
-from app.services.duplicate_detector import check_for_duplicates
 from app.services.hash_service import (
     generate_file_hash,
     generate_content_hash,
@@ -69,6 +65,7 @@ def _statement_result(
     duplicate_confidence: Optional[float] = None,
     duplicate_message: Optional[str] = None,
 ) -> StatementResult:
+    transactions = deduplicate_transactions(transactions)
     revenue_snapshot = apply_revenue_filter(transactions)
     meta = extract_statement_metadata(rows, transactions, header_idx=header_idx)
     return StatementResult(
@@ -491,16 +488,11 @@ def process_single_statement(file_path: Path) -> StatementResult:
 
     if pdf_type == "scanned" or not rows:
         try:
-            # Optimized: Use 200 DPI for faster processing with excellent accuracy
             images = preprocess_scanned_pdf(file_path, dpi=200)
             for img in images:
                 ocr_rows = extract_ocr_rows(img)
                 if ocr_rows:
                     rows.extend(ocr_rows)
-                else:
-                    text = run_paddleocr_structure(img)
-                    if text:
-                        rows.extend(parse_ocr_text_to_rows(text))
             LOGGER.info(f"[{file_path.name}] OCR → {len(rows)} rows")
         except Exception as e:
             LOGGER.error(f"OCR failed: {e}")
@@ -943,6 +935,64 @@ def _parse_check_detail_rows(
 
 # API endpoints
 
+async def _process_uploaded_file(
+    upload: UploadFile,
+    *,
+    with_duplicate_check: bool,
+) -> StatementResult:
+    original_filename = upload.filename or f"document-{uuid.uuid4().hex}.bin"
+    target_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{original_filename}"
+
+    try:
+        await write_file(upload, target_path)
+
+        file_hash = None
+        content_hash = None
+        fingerprint = None
+
+        if with_duplicate_check:
+            file_hash = generate_file_hash(target_path)
+            LOGGER.info(f"File hash for {original_filename}: {file_hash[:16]}...")
+
+        result = process_single_statement(target_path)
+        result.filename = original_filename
+
+        if with_duplicate_check:
+            metadata = {
+                "bank_name": result.bank_name,
+                "account_number": result.account_number,
+                "current_balance": result.current_balance,
+            }
+            content_hash = generate_content_hash(result.transactions, metadata)
+            fingerprint = generate_transaction_fingerprint(result.transactions)
+            result.file_hash = file_hash
+            result.content_hash = content_hash
+            result.fingerprint = fingerprint
+
+        LOGGER.info(
+            f"Done: {original_filename} → "
+            f"{len(result.transactions)} transactions, "
+            f"confidence={result.confidence}"
+        )
+        return result
+    except Exception as exc:
+        LOGGER.error(f"Failed: {original_filename}: {exc}", exc_info=True)
+        return StatementResult(
+            filename=original_filename,
+            transactions=[],
+            confidence=0.0,
+            pdf_type="unknown",
+            warnings=[f"Processing failed: {exc}"],
+            raw_text="",
+        )
+    finally:
+        try:
+            if target_path.exists():
+                target_path.unlink()
+        except Exception:
+            pass
+
+
 @router.post("/process", response_model=OCRResponse)
 async def process_documents(files: List[UploadFile] = File(...)):
     """
@@ -953,34 +1003,10 @@ async def process_documents(files: List[UploadFile] = File(...)):
         raise HTTPException(status_code=400, detail="No files uploaded")
 
     results: List[StatementResult] = []
-
     for upload in files:
-        target_path = UPLOAD_DIR / upload.filename
-        try:
-            await write_file(upload, target_path)
-            result = process_single_statement(target_path)
-            results.append(result)
-            LOGGER.info(
-                f"Done: {upload.filename} → "
-                f"{len(result.transactions)} transactions, "
-                f"confidence={result.confidence}"
-            )
-        except Exception as exc:
-            LOGGER.error(f"Failed: {upload.filename}: {exc}", exc_info=True)
-            results.append(StatementResult(
-                filename=upload.filename,
-                transactions=[],
-                confidence=0.0,
-                pdf_type="unknown",
-                warnings=[f"Processing failed: {exc}"],
-                raw_text="",
-            ))
-        finally:
-            try:
-                if target_path.exists():
-                    target_path.unlink()
-            except Exception:
-                pass
+        results.append(
+            await _process_uploaded_file(upload, with_duplicate_check=False)
+        )
 
     return OCRResponse(status="success", documents=results)
 
@@ -990,73 +1016,17 @@ async def process_documents_with_duplicate_check(
     files: List[UploadFile] = File(...),
 ):
     """
-    Process bank statement documents WITH duplicate detection.
-
-    This endpoint:
-    1. Generates file hash before processing
-    2. Processes the document
-    3. Generates content hash after extraction
-    4. Returns duplicate detection information
-
-    The frontend/backend should then check these hashes against the database
-    before saving to prevent duplicates.
+    Process bank statement documents WITH duplicate detection hashes.
+    The Node.js layer checks these hashes against the database before saving.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
     results: List[StatementResult] = []
-
     for upload in files:
-        target_path = UPLOAD_DIR / upload.filename
-        try:
-            # Write file to disk
-            await write_file(upload, target_path)
-
-            # Generate file hash BEFORE processing
-            file_hash = generate_file_hash(target_path)
-            LOGGER.info(f"File hash for {upload.filename}: {file_hash[:16]}...")
-
-            # Process the statement
-            result = process_single_statement(target_path)
-
-            # Generate content hash and fingerprint AFTER processing
-            metadata = {
-                "bank_name": result.bank_name,
-                "account_number": result.account_number,
-                "current_balance": result.current_balance,
-            }
-            content_hash = generate_content_hash(result.transactions, metadata)
-            fingerprint = generate_transaction_fingerprint(result.transactions)
-
-            # Update result with hash information
-            result.file_hash = file_hash
-            result.content_hash = content_hash
-            result.fingerprint = fingerprint
-
-            results.append(result)
-            LOGGER.info(
-                f"Done: {upload.filename} → "
-                f"{len(result.transactions)} transactions, "
-                f"confidence={result.confidence}, "
-                f"file_hash={file_hash[:16]}..., "
-                f"content_hash={content_hash[:16]}..."
-            )
-        except Exception as exc:
-            LOGGER.error(f"Failed: {upload.filename}: {exc}", exc_info=True)
-            results.append(StatementResult(
-                filename=upload.filename,
-                transactions=[],
-                confidence=0.0,
-                pdf_type="unknown",
-                warnings=[f"Processing failed: {exc}"],
-                raw_text="",
-            ))
-        finally:
-            try:
-                if target_path.exists():
-                    target_path.unlink()
-            except Exception:
-                pass
+        results.append(
+            await _process_uploaded_file(upload, with_duplicate_check=True)
+        )
 
     return OCRResponse(status="success", documents=results)
 

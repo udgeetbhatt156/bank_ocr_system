@@ -55,6 +55,7 @@ type StatementWithRelations = {
   uploadedAt: Date;
   processedAt: Date | null;
   status: string;
+  confidence?: number | null;
   rawData: unknown;
   account: {
     bankName: string;
@@ -163,6 +164,26 @@ function decimalOrNull(value: number | string | null | undefined) {
   return num;
 }
 
+function mapTransactionRow(t: {
+  date: Date;
+  description: string;
+  debit: unknown;
+  credit: unknown;
+  balance: unknown;
+  reference: string | null;
+  sourceLine?: string | null;
+}): TransactionRecord {
+  return {
+    date: formatDateForClient(t.date),
+    description: t.description,
+    debit: t.debit != null ? Number(t.debit) : null,
+    credit: t.credit != null ? Number(t.credit) : null,
+    balance: t.balance != null ? Number(t.balance) : null,
+    reference: t.reference,
+    source_line: t.sourceLine ?? t.reference ?? "",
+  };
+}
+
 export async function saveUploadedFile(
   userId: string,
   statementId: string,
@@ -176,11 +197,54 @@ export async function saveUploadedFile(
   return filePath;
 }
 
+export type PersistOcrResult = {
+  statementId: string;
+  skippedDuplicate: boolean;
+  duplicateOf?: string;
+};
+
 export async function persistOcrDocument(
   userId: string,
   doc: OcrDocumentPayload,
   fileBuffer: Buffer
-) {
+): Promise<PersistOcrResult> {
+  // User-wide duplicate checks — same file/content must not create a second statement
+  if (doc.file_hash) {
+    const duplicateByFileHash = await prisma.statement.findFirst({
+      where: {
+        fileHash: doc.file_hash,
+        account: { userId },
+      },
+      select: { id: true, fileName: true },
+    });
+
+    if (duplicateByFileHash) {
+      return {
+        statementId: duplicateByFileHash.id,
+        skippedDuplicate: true,
+        duplicateOf: duplicateByFileHash.fileName,
+      };
+    }
+  }
+
+  if (doc.content_hash) {
+    const duplicateByContentHash = await prisma.statement.findFirst({
+      where: {
+        contentHash: doc.content_hash,
+        account: { userId },
+      },
+      select: { id: true, fileName: true },
+    });
+
+    if (duplicateByContentHash) {
+      return {
+        statementId: duplicateByContentHash.id,
+        skippedDuplicate: true,
+        duplicateOf: duplicateByContentHash.fileName,
+      };
+    }
+  }
+
   const accountNumber =
     doc.account_number?.trim() || `account-${userId.slice(0, 8)}`;
   const bankName = doc.bank_name?.trim() || "Unknown Bank";
@@ -202,41 +266,7 @@ export async function persistOcrDocument(
         },
       });
 
-  // Check for duplicate by file hash (if provided by OCR service)
-  if ((doc as any).file_hash) {
-    const duplicateByFileHash = await prisma.statement.findFirst({
-      where: {
-        fileHash: (doc as any).file_hash,
-        accountId: account.id,
-      },
-      select: { id: true, fileName: true },
-    });
-
-    if (duplicateByFileHash) {
-      throw new Error(
-        `Duplicate file detected: This exact file was already uploaded as "${duplicateByFileHash.fileName}"`
-      );
-    }
-  }
-
-  // Check for duplicate by content hash (if provided by OCR service)
-  if ((doc as any).content_hash) {
-    const duplicateByContentHash = await prisma.statement.findFirst({
-      where: {
-        contentHash: (doc as any).content_hash,
-        accountId: account.id,
-      },
-      select: { id: true, fileName: true },
-    });
-
-    if (duplicateByContentHash) {
-      throw new Error(
-        `Duplicate content detected: This statement content was already processed in "${duplicateByContentHash.fileName}"`
-      );
-    }
-  }
-
-  // Check for duplicate by filename (legacy check)
+  // Re-upload with same filename updates the existing record instead of creating a new one
   const existing = await prisma.statement.findFirst({
     where: {
       fileName: doc.filename,
@@ -247,8 +277,15 @@ export async function persistOcrDocument(
 
   const statementFields = {
     fileName: doc.filename,
-    fileHash: (doc as any).file_hash || null,
-    contentHash: (doc as any).content_hash || null,
+    fileHash: doc.file_hash || null,
+    contentHash: doc.content_hash || null,
+    confidence: doc.confidence ?? null,
+    pdfType: doc.pdf_type ?? null,
+    bankName: doc.bank_name?.trim() || null,
+    accountNumber: doc.account_number?.trim() || null,
+    customerNumber: doc.customer_number?.trim() || null,
+    currentBalance:
+      doc.current_balance != null ? doc.current_balance : null,
     processedAt: new Date(),
     status: doc.transactions.length > 0 ? "processed" : "failed",
     rawData: buildRawData(doc),
@@ -306,11 +343,12 @@ export async function persistOcrDocument(
     });
   }
 
-  return statement.id;
+  return { statementId: statement.id, skippedDuplicate: false };
 }
 
 export function statementToDocumentResult(
-  statement: StatementWithRelations
+  statement: StatementWithRelations,
+  options?: { includeRawText?: boolean }
 ): DocumentResult {
   const meta = parseStoredMeta(statement.rawData, statement.account);
 
@@ -318,7 +356,7 @@ export function statementToDocumentResult(
     id: statement.id,
     filename: statement.fileName,
     fileUrl: `/api/statements/${statement.id}/file`,
-    raw_text: meta.raw_text,
+    raw_text: options?.includeRawText ? meta.raw_text : "",
     bank_name: meta.bank_name,
     account_number: meta.account_number,
     customer_number: meta.customer_number,
@@ -327,38 +365,117 @@ export function statementToDocumentResult(
     adjusted_revenue: meta.adjusted_revenue ?? undefined,
     revenue_deductions: meta.revenue_deductions ?? undefined,
     total_debits: meta.total_debits ?? undefined,
-    transactions: statement.transactions.map((t) => ({
-      date: formatDateForClient(t.date),
-      description: t.description,
-      debit: t.debit != null ? Number(t.debit) : null,
-      credit: t.credit != null ? Number(t.credit) : null,
-      balance: t.balance != null ? Number(t.balance) : null,
-      reference: t.reference,
-      source_line: t.sourceLine ?? t.reference ?? "",
-    })),
+    confidence: meta.confidence ?? statement.confidence ?? null,
+    pdf_type: meta.pdf_type ?? null,
+    transactions: statement.transactions.map(mapTransactionRow),
   };
 }
 
-  // const statements = await prisma.statement.findMany({
-  //   where: { account: { userId } },
-  //   include: {
-  //     transactions: { orderBy: { date: "asc" } },
-  //     account: true,
-  //   },
-  //   orderBy: { uploadedAt: "desc" },
-  // });
-  export async function fetchUserDocuments(
+function buildDocumentFromSummary(
+  summary: {
+    id: string;
+    fileName: string;
+    confidence: number | null;
+    bankName: string | null;
+    accountNumber: string | null;
+    customerNumber: string | null;
+    currentBalance: unknown;
+    rawData: unknown;
+    account: {
+      bankName: string;
+      accountNumber: string;
+      customerNumber?: string | null;
+    };
+  },
+  transactions: TransactionRecord[]
+): DocumentResult {
+  const meta = parseStoredMeta(summary.rawData, summary.account);
+
+  return {
+    id: summary.id,
+    filename: summary.fileName,
+    fileUrl: `/api/statements/${summary.id}/file`,
+    raw_text: "",
+    bank_name: summary.bankName ?? meta.bank_name,
+    account_number: summary.accountNumber ?? meta.account_number,
+    customer_number: summary.customerNumber ?? meta.customer_number,
+    current_balance:
+      summary.currentBalance != null
+        ? Number(summary.currentBalance)
+        : meta.current_balance,
+    raw_credits: meta.raw_credits ?? undefined,
+    adjusted_revenue: meta.adjusted_revenue ?? undefined,
+    revenue_deductions: meta.revenue_deductions ?? undefined,
+    total_debits: meta.total_debits ?? undefined,
+    confidence: summary.confidence ?? meta.confidence ?? null,
+    pdf_type: meta.pdf_type ?? null,
+    transactions,
+  };
+}
+
+export async function fetchUserDocuments(
   userId: string
 ): Promise<DocumentResult[]> {
-  const statements = await prisma.statement.findMany({
-    where: { account: { userId } },
+  const [statements, transactions] = await Promise.all([
+    prisma.statement.findMany({
+      where: { account: { userId } },
+      select: {
+        id: true,
+        fileName: true,
+        confidence: true,
+        bankName: true,
+        accountNumber: true,
+        customerNumber: true,
+        currentBalance: true,
+        account: {
+          select: {
+            bankName: true,
+            accountNumber: true,
+            customerNumber: true,
+          },
+        },
+      },
+      orderBy: { uploadedAt: "desc" },
+    }),
+    prisma.transaction.findMany({
+      where: { account: { userId } },
+      select: {
+        statementId: true,
+        date: true,
+        description: true,
+        debit: true,
+        credit: true,
+        balance: true,
+        reference: true,
+      },
+      orderBy: [{ statementId: "asc" }, { date: "asc" }],
+    }),
+  ]);
+
+  const txByStatement = new Map<string, TransactionRecord[]>();
+  for (const t of transactions) {
+    const row = mapTransactionRow(t);
+    const bucket = txByStatement.get(t.statementId);
+    if (bucket) bucket.push(row);
+    else txByStatement.set(t.statementId, [row]);
+  }
+
+  return statements.map((s) =>
+    buildDocumentFromSummary({ ...s, rawData: null }, txByStatement.get(s.id) ?? [])
+  );
+}
+
+export async function getStatementForUser(statementId: string, userId: string) {
+  return prisma.statement.findFirst({
+    where: { id: statementId, account: { userId } },
     select: {
       id: true,
       fileName: true,
-      uploadedAt: true,
-      processedAt: true,
-      status: true,
-      rawData: true,
+      confidence: true,
+      bankName: true,
+      accountNumber: true,
+      customerNumber: true,
+      currentBalance: true,
       account: {
         select: {
           bankName: true,
@@ -366,33 +483,41 @@ export function statementToDocumentResult(
           customerNumber: true,
         },
       },
-      _count: {
+      transactions: {
         select: {
-          transactions: true,
+          date: true,
+          description: true,
+          debit: true,
+          credit: true,
+          balance: true,
+          reference: true,
         },
+        orderBy: { date: "asc" },
       },
     },
-    orderBy: { uploadedAt: "desc" },
   });
-
-  return statements.map((s) => statementToDocumentResult(s));
 }
 
-export async function getStatementForUser(statementId: string, userId: string) {
-  return prisma.statement.findFirst({
+export async function getStatementFilePath(
+  statementId: string,
+  userId: string
+): Promise<{ filePath: string; fileName: string } | null> {
+  const row = await prisma.statement.findFirst({
     where: { id: statementId, account: { userId } },
-    include: {
-      transactions: { orderBy: { date: "asc" } },
-      account: true,
-    },
+    select: { filePath: true, fileName: true },
   });
+  if (!row?.filePath) return null;
+  return { filePath: row.filePath, fileName: row.fileName };
 }
 
 export async function deleteStatementForUser(
   statementId: string,
   userId: string
 ): Promise<boolean> {
-  const statement = await getStatementForUser(statementId, userId);
+  const statement = await prisma.statement.findFirst({
+    where: { id: statementId, account: { userId } },
+    select: { id: true, filePath: true },
+  });
   if (!statement) return false;
 
   await prisma.statement.delete({ where: { id: statement.id } });
@@ -411,6 +536,25 @@ export async function deleteStatementForUser(
   }
 
   return true;
+}
+
+export function formatStatementDetail(
+  statement: NonNullable<Awaited<ReturnType<typeof getStatementForUser>>>
+): DocumentResult {
+  return buildDocumentFromSummary(
+    {
+      id: statement.id,
+      fileName: statement.fileName,
+      confidence: statement.confidence,
+      bankName: statement.bankName,
+      accountNumber: statement.accountNumber,
+      customerNumber: statement.customerNumber,
+      currentBalance: statement.currentBalance,
+      rawData: null,
+      account: statement.account,
+    },
+    statement.transactions.map((t) => mapTransactionRow({ ...t, sourceLine: null }))
+  );
 }
 
 export type StatementListItem = {
@@ -432,23 +576,52 @@ export type StatementListItem = {
 export async function fetchUserStatementList(
   userId: string
 ): Promise<StatementListItem[]> {
-  const statements = await prisma.statement.findMany({
-    where: { account: { userId } },
-    include: {
-      transactions: true,
-      account: true,
-    },
-    orderBy: { uploadedAt: "desc" },
-  });
+  const [statements, aggregates] = await Promise.all([
+    prisma.statement.findMany({
+      where: { account: { userId } },
+      select: {
+        id: true,
+        fileName: true,
+        uploadedAt: true,
+        processedAt: true,
+        status: true,
+        bankName: true,
+        accountNumber: true,
+        customerNumber: true,
+        currentBalance: true,
+        account: {
+          select: {
+            bankName: true,
+            accountNumber: true,
+            customerNumber: true,
+          },
+        },
+        _count: { select: { transactions: true } },
+      },
+      orderBy: { uploadedAt: "desc" },
+    }),
+    prisma.transaction.groupBy({
+      by: ["statementId"],
+      where: { account: { userId } },
+      _sum: { credit: true, debit: true },
+    }),
+  ]);
 
-  return statements.map((s: StatementWithRelations) => {
-    const meta = parseStoredMeta(s.rawData, s.account);
-    let totalCredits = 0;
-    let totalDebits = 0;
-    for (const t of s.transactions) {
-      totalCredits += Number(t.credit || 0);
-      totalDebits += Number(t.debit || 0);
-    }
+  const totalsByStatement = new Map(
+    aggregates.map((row) => [
+      row.statementId,
+      {
+        totalCredits: Number(row._sum.credit ?? 0),
+        totalDebits: Number(row._sum.debit ?? 0),
+      },
+    ])
+  );
+
+  return statements.map((s) => {
+    const totals = totalsByStatement.get(s.id) ?? {
+      totalCredits: 0,
+      totalDebits: 0,
+    };
 
     return {
       id: s.id,
@@ -456,13 +629,14 @@ export async function fetchUserStatementList(
       uploadedAt: s.uploadedAt.toISOString(),
       processedAt: s.processedAt?.toISOString() ?? null,
       status: s.status,
-      bankName: meta.bank_name,
-      accountNumber: meta.account_number,
-      customerNumber: meta.customer_number,
-      currentBalance: meta.current_balance,
-      transactionCount: s.transactions.length,
-      totalCredits,
-      totalDebits,
+      bankName: s.bankName ?? s.account.bankName ?? null,
+      accountNumber: s.accountNumber ?? s.account.accountNumber ?? null,
+      customerNumber: s.customerNumber ?? s.account.customerNumber ?? null,
+      currentBalance:
+        s.currentBalance != null ? Number(s.currentBalance) : null,
+      transactionCount: s._count.transactions,
+      totalCredits: totals.totalCredits,
+      totalDebits: totals.totalDebits,
       fileUrl: `/api/statements/${s.id}/file`,
     };
   });

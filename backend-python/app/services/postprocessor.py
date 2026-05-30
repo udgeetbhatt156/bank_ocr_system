@@ -488,3 +488,43 @@ def calculate_confidence(transactions: List[Dict]) -> float:
             s += 0.1
         total += s
     return round(total / len(transactions), 2)
+
+
+def deduplicate_transactions(transactions: List) -> List:
+    """
+    Remove duplicate transaction rows produced when multiple parsers overlap
+    (e.g. main table + check-detail extraction).
+    """
+    seen: set = set()
+    unique = []
+
+    for txn in transactions:
+        if hasattr(txn, "dict"):
+            data = txn.dict()
+        elif isinstance(txn, dict):
+            data = txn
+        else:
+            data = {
+                "date": getattr(txn, "date", None),
+                "description": getattr(txn, "description", ""),
+                "debit": getattr(txn, "debit", None),
+                "credit": getattr(txn, "credit", None),
+                "reference": getattr(txn, "reference", None),
+            }
+
+        debit = data.get("debit")
+        credit = data.get("credit")
+        key = (
+            data.get("date"),
+            round(float(debit), 2) if debit is not None else None,
+            round(float(credit), 2) if credit is not None else None,
+            (data.get("description") or "").strip().lower()[:100],
+            (data.get("reference") or "").strip().lower(),
+        )
+
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(txn)
+
+    return unique

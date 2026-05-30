@@ -2,8 +2,10 @@ import { create } from "zustand";
 import {
   apiUploadStatements,
   apiFetchSavedStatements,
+  apiFetchStatementList,
   type DocumentResult,
   type ProcessResponse,
+  type StatementListItem,
   type TransactionRecord,
 } from "@/lib/api";
 import {
@@ -30,9 +32,12 @@ interface OcrState {
 
   /* results */
   documents: DocumentResult[];
+  statementList: StatementListItem[];
+  statementListLoaded: boolean;
   activeTab: string;
   isHydrated: boolean;
   isHydrating: boolean;
+  isLoadingStatementList: boolean;
 
   /* actions */
   addFiles: (newFiles: File[]) => { added: string[]; duplicates: string[] };
@@ -41,6 +46,7 @@ interface OcrState {
   processFiles: () => Promise<ProcessResponse>;
   clearResults: () => void;
   hydrateFromServer: (force?: boolean) => Promise<void>;
+  loadStatementList: (force?: boolean) => Promise<StatementListItem[]>;
   setActiveTab: (tab: string) => void;
 
   /* computed-like helpers */
@@ -67,14 +73,16 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   estimatedSeconds: null,
   processingMessage: null,
   documents: [],
+  statementList: [],
+  statementListLoaded: false,
   activeTab: "overview",
   isHydrated: false,
   isHydrating: false,
+  isLoadingStatementList: false,
 
   addFiles: (newFiles) => {
     const { files, documents } = get();
 
-    // Build a set of names already in the queue OR already processed
     const existingNames = new Set<string>([
       ...files.map((f) => f.file.name.toLowerCase()),
       ...documents.map((d) => d.filename.toLowerCase()),
@@ -158,19 +166,18 @@ export const useOcrStore = create<OcrState>((set, get) => ({
         set({ uploadProgress: pct })
       );
 
-      const notPersisted = result.documents.filter((d) => !d.id);
       set((s) => ({
         isProcessing: false,
         uploadProgress: 100,
         processingStartedAt: null,
         processingMessage: null,
-        documents: mergeDocuments(s.documents, result.documents),
-        isHydrated: true,
+        isHydrated: false,
         files: s.files.map((f) =>
           f.status === "uploading" ? { ...f, status: "success" as const } : f
         ),
       }));
 
+      // Always reload from DB — single source of truth, prevents duplicate entries
       await get().hydrateFromServer(true);
       return result;
     } catch (err) {
@@ -194,6 +201,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   clearResults: () =>
     set({
       documents: [],
+      statementList: [],
+      statementListLoaded: false,
       files: [],
       uploadProgress: 0,
       processingStartedAt: null,
@@ -201,6 +210,27 @@ export const useOcrStore = create<OcrState>((set, get) => ({
       estimatedSeconds: null,
       processingMessage: null,
     }),
+
+  loadStatementList: async (force = false) => {
+    const { statementListLoaded, isLoadingStatementList } = get();
+    if (!force && (statementListLoaded || isLoadingStatementList)) {
+      return get().statementList;
+    }
+
+    set({ isLoadingStatementList: true });
+    try {
+      const { statements } = await apiFetchStatementList();
+      set({
+        statementList: statements,
+        statementListLoaded: true,
+        isLoadingStatementList: false,
+      });
+      return statements;
+    } catch {
+      set({ isLoadingStatementList: false });
+      return get().statementList;
+    }
+  },
 
   hydrateFromServer: async (force = false) => {
     const { isHydrated, isHydrating } = get();
@@ -214,6 +244,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
         isHydrated: true,
         isHydrating: false,
       });
+      void get().loadStatementList(true);
     } catch {
       set({ isHydrated: true, isHydrating: false });
     }
@@ -255,31 +286,11 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   },
 }));
 
-function mergeDocuments(
-  current: DocumentResult[],
-  incoming: DocumentResult[]
-): DocumentResult[] {
-  const existing = [...current];
-  for (const doc of incoming) {
-    const idx = existing.findIndex(
-      (d) =>
-        (doc.id && d.id === doc.id) ||
-        (!doc.id && d.filename === doc.filename)
-    );
-    if (idx !== -1) {
-      existing[idx] = doc;
-    } else {
-      existing.push(doc);
-    }
-  }
-  return existing;
-}
-
 function estimateProcessingSeconds(files: File[]) {
   const totalMb = files.reduce((sum, file) => sum + file.size / (1024 * 1024), 0);
-  const base = files.length * 45;
-  const sizeCost = totalMb * 35;
-  return Math.max(60, Math.ceil(base + sizeCost));
+  const base = files.length * 30;
+  const sizeCost = totalMb * 20;
+  return Math.max(45, Math.ceil(base + sizeCost));
 }
 
 function formatDuration(totalSeconds: number) {

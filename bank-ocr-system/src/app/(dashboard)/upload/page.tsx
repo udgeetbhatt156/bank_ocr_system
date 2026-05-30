@@ -8,6 +8,7 @@ import { UploadDropzone } from "@/components/upload-dropzone";
 import { ProcessingStatus } from "@/components/processing-status";
 import { StatementPreview } from "@/components/statement-preview";
 import { Button } from "@/components/ui/button";
+import { AccuracyBadge } from "@/components/accuracy-badge";
 import { Loader2, Rocket, Trash2, ArrowRight } from "lucide-react";
 
 export default function UploadPage() {
@@ -45,9 +46,13 @@ export default function UploadPage() {
         }
       );
       if (result?.warnings?.length) {
-        toast.warning("Some files could not be saved", {
-          description: result.warnings.join("; "),
-        });
+        const skipped = result.skippedDuplicates?.length ?? 0;
+        toast.warning(
+          skipped > 0 ? "Some files were skipped" : "Some files could not be saved",
+          {
+            description: result.warnings.join("; "),
+          }
+        );
       }
     } catch (err) {
       toast.error(
@@ -164,9 +169,9 @@ export default function UploadPage() {
                     {doc.transactions.length} transactions found
                   </p>
                 </div>
-                <span className="shrink-0 rounded-lg bg-[var(--credit)]/10 px-2.5 py-1 text-xs font-semibold text-[var(--credit)]">
-                  ✓ Extracted
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <AccuracyBadge confidence={doc.confidence} showCheck />
+                </div>
               </div>
             ))}
           </div>

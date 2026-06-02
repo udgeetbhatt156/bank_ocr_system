@@ -1,23 +1,153 @@
 from pathlib import Path
-import fitz
+import fitz  # PyMuPDF
+from typing import Tuple,Literal
+ 
+
+from pathlib import Path
+from typing import Literal
 
 
-def detect_pdf_type(file_path: Path) -> str:
+def detect_pdf_type(
+    file_path: Path, 
+    min_text_threshold: int = 120,      # Adjusted for bank statements
+    min_pages_with_text: int = 2,
+    total_chars_threshold: int = 700,
+    image_heavy_threshold: float = 0.6   # New: ratio of image content
+) -> Literal["digital", "scanned", "hybrid"]:
     """
-    Detect if PDF is digital or scanned.
+    Detect PDF type: digital, scanned, or hybrid.
+    Optimized for US bank statements (especially Washington Trust, etc.).
     """
     try:
         with fitz.open(file_path) as doc:
-            for page in doc:
-                text = page.get_text()
+            if len(doc) == 0:
+                return "scanned"
 
-                if len(text.strip()) > 100:
+            total_text_chars = 0
+            pages_with_text = 0
+            total_images = 0
+            max_pages_to_check = min(8, len(doc))
+
+            for page_num in range(max_pages_to_check):
+                page = doc[page_num]
+                
+                # Text analysis
+                text = page.get_text("text").strip()
+                text_length = len(text)
+                total_text_chars += text_length
+                
+                if text_length > min_text_threshold:
+                    pages_with_text += 1
+
+                # Image analysis (important for hybrid detection)
+                images = page.get_images(full=True)
+                total_images += len(images)
+
+                # Early detection
+                if pages_with_text >= min_pages_with_text and total_text_chars > total_chars_threshold:
+                    if len(images) > 3:   # Has significant images
+                        return "hybrid"
                     return "digital"
 
-        return "scanned"
+            # Final decision logic
+            has_good_text = pages_with_text >= min_pages_with_text or total_text_chars > total_chars_threshold
+            has_images = total_images > 5 or (total_images / max(1, max_pages_to_check) > image_heavy_threshold)
 
-    except Exception:
-        return "scanned"
+            if has_good_text and has_images:
+                return "hybrid"
+            elif has_good_text:
+                return "digital"
+            elif total_text_chars > 400 and total_images == 0:
+                return "digital"
+            else:
+                return "scanned"
+
+          
+            sample_text = doc.get_text()[:3000].lower()
+            bank_keywords = ["account number", "statement date", "beginning balance", 
+                           "ending balance", "activity in date order", "deposits", "withdrawals"]
+            
+            if any(kw in sample_text for kw in bank_keywords) and len(sample_text) > 400:
+                if total_images > 8:
+                    return "hybrid"
+                return "digital"
+
+    except Exception as e:
+        print(f"PDF detection error for {file_path.name}: {e}")
+        return "scanned"  # Safe fallback
+    
+# def detect_pdf_type(file_path: Path, min_text_threshold: int = 80) -> str:
+#     """
+#     Detect whether a bank statement PDF is 'digital' (text-based) or 'scanned' (image-based).
+    
+#     Returns: "digital" or "scanned"
+#     """
+#     try:
+#         with fitz.open(file_path) as doc:
+#             print(f"Analyzing PDF: {file_path} with {len(doc)} pages")
+#             if len(doc) == 0:
+#                 return "scanned"
+
+#             total_text_chars = 0
+#             pages_with_text = 0
+#             pages_checked = 0
+#             max_pages_to_check = min(5, len(doc))  # Optimize: check first few pages
+
+#             for page_num in range(max_pages_to_check):
+#                 page = doc[page_num]
+#                 text = page.get_text("text").strip()
+#                 text_length = len(text)
+
+#                 total_text_chars += text_length
+                
+#                 # Count pages with meaningful text
+#                 if text_length > min_text_threshold:
+#                     pages_with_text += 1
+
+#                 pages_checked += 1
+
+#             # Decision logic
+#             if pages_with_text >= 2 or total_text_chars > 500:
+#                 return "digital"
+            
+#             # Additional check: text density on first page
+#             if pages_checked > 0:
+#                 avg_text_per_page = total_text_chars / pages_checked
+#                 if avg_text_per_page > 150:
+#                     return "digital"
+
+#             # Fallback: Try to extract text from all pages if borderline
+#             if total_text_chars < 300 and len(doc) > 3:
+#                 full_text = doc.get_text().strip()
+#                 if len(full_text) > 800:
+#                     return "digital"
+
+#             return "scanned"
+
+#     except Exception as e:
+#         # Log the error in production
+#         print(f"PDF detection error for {file_path}: {e}")
+#         return "scanned"  # Safe fallback
+# from pathlib import Path
+# import fitz
+
+
+# def detect_pdf_type(file_path: Path) -> str:
+#     """
+#     Detect if PDF is digital or scanned.
+#     """
+#     try:
+#         with fitz.open(file_path) as doc:
+#             for page in doc:
+#                 text = page.get_text()
+
+#                 if len(text.strip()) > 100:
+#                     return "digital"
+
+#         return "scanned"
+
+#     except Exception:
+#         return "scanned"
 
 # """
 # PDF Type Detection Service

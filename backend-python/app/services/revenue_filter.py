@@ -199,10 +199,7 @@ DEDUCTION_RULES = [
     ),
 ]
 
-
-# ═══════════════════════════════════════════════════════════════════════════
 # WIRE DEPOSIT CONDITIONAL RULES
-# ═══════════════════════════════════════════════════════════════════════════
 
 WIRE_DEDUCTION_PATTERNS = [
     r"\bmerchant\b",
@@ -240,9 +237,9 @@ def _first_rule_match(text: str, rules: Iterable[tuple]) -> Optional[Tuple[str, 
     return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+
 # CLASSIFICATION FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════
+
 
 def classify_credit_revenue(
     description: str,

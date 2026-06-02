@@ -48,6 +48,13 @@ type StoredStatementMeta = {
   total_debits?: number | null;
 };
 
+function normalizeSyntheticAccountNumber(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (/^account-[a-z0-9]{6,}$/i.test(trimmed)) return null;
+  return trimmed;
+}
+
 type StatementWithRelations = {
   id: string;
   fileName: string;
@@ -106,7 +113,10 @@ function parseStoredMeta(
   return {
     raw_text: meta.raw_text ?? "",
     bank_name: meta.bank_name ?? account?.bankName ?? null,
-    account_number: meta.account_number ?? account?.accountNumber ?? null,
+    account_number:
+      normalizeSyntheticAccountNumber(meta.account_number) ??
+      normalizeSyntheticAccountNumber(account?.accountNumber) ??
+      null,
     customer_number: meta.customer_number ?? account?.customerNumber ?? null,
     current_balance:
       meta.current_balance != null ? Number(meta.current_balance) : null,
@@ -356,7 +366,7 @@ export function statementToDocumentResult(
     id: statement.id,
     filename: statement.fileName,
     fileUrl: `/api/statements/${statement.id}/file`,
-    raw_text: options?.includeRawText ? meta.raw_text : "",
+    raw_text: options?.includeRawText ? meta.raw_text : "Not Found.",
     bank_name: meta.bank_name,
     account_number: meta.account_number,
     customer_number: meta.customer_number,
@@ -630,7 +640,10 @@ export async function fetchUserStatementList(
       processedAt: s.processedAt?.toISOString() ?? null,
       status: s.status,
       bankName: s.bankName ?? s.account.bankName ?? null,
-      accountNumber: s.accountNumber ?? s.account.accountNumber ?? null,
+      accountNumber:
+        normalizeSyntheticAccountNumber(s.accountNumber) ??
+        normalizeSyntheticAccountNumber(s.account.accountNumber) ??
+        null,
       customerNumber: s.customerNumber ?? s.account.customerNumber ?? null,
       currentBalance:
         s.currentBalance != null ? Number(s.currentBalance) : null,

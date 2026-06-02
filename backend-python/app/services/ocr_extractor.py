@@ -1,21 +1,12 @@
-"""
-Dual OCR Engine Service
-Handles both digital PDF extraction and PaddleOCR for scanned documents
-"""
 import logging
 import os
 import re
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
-import pdfplumber
-from bs4 import BeautifulSoup
 
 LOGGER = logging.getLogger(__name__)
 
-# Paddle/PaddleOCR 3.x can fail on some Windows CPU builds when the new PIR
-# executor is enabled. Set these before importing paddleocr, then initialize the
-# model lazily so app startup stays fast and digital PDFs do not pay OCR cost.
 os.environ.setdefault("FLAGS_enable_pir_api", "false")
 os.environ.setdefault("FLAGS_enable_pir_in_executor", "false")
 
@@ -23,86 +14,28 @@ paddle_ocr = None
 
 
 def _get_paddle_ocr():
-    """
-    Lazy initialization of PaddleOCR with optimized settings for speed.
-    
-    PERFORMANCE OPTIMIZATIONS:
-    - Disabled orientation classification (faster)
-    - Disabled document unwarping (faster)
-    - Disabled textline orientation (faster)
-    - Uses CPU by default (GPU optional via environment variable)
-    """
     global paddle_ocr
     if paddle_ocr is None:
         from paddleocr import PaddleOCR
 
         try:
-            # Optimized settings for maximum speed while maintaining accuracy
             paddle_ocr = PaddleOCR(
                 lang="en",
-                use_angle_cls=False,  # Disable angle classification for speed
-                use_gpu=False,  # CPU mode (set to True if GPU available)
-                show_log=False,  # Disable verbose logging for speed
+                use_angle_cls=False,
+                use_gpu=False,
+                show_log=False,
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
             )
         except TypeError:
-            # PaddleOCR 2.x compatibility.
             paddle_ocr = PaddleOCR(
                 lang="en",
                 use_angle_cls=False,
                 use_gpu=False,
-                show_log=False
+                show_log=False,
             )
     return paddle_ocr
-
-
-def extract_digital_pdf(file_path: Path) -> List[List[str]]:
-    """
-    Extract tables from digital PDFs using pdfplumber
-    
-    Args:
-        file_path: Path to PDF file
-        
-    Returns:
-        List of rows (each row is a list of cell values)
-    """
-    all_rows = []
-    
-    try:
-        with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                # Try to extract tables first
-                tables = page.extract_tables()
-                print(f"Extracted {len(tables) if tables else 0} tables from page {page.page_number}")
-                if tables:
-                    for table in tables:
-                        for row in table:
-                            if row and any(cell for cell in row if cell):
-                                # Clean cells
-                                cleaned_row = [
-                                    str(cell).strip() if cell else "" 
-                                    for cell in row
-                                ]
-                                all_rows.append(cleaned_row)
-                else:
-                    # Fallback to text extraction
-                    text = page.extract_text()
-                    print(f"Extracted text from page {page.page_number}: {text[:100]}...")  # Print first 100 characters
-                    if text:
-                        lines = text.split('\n')
-                        for line in lines:
-                            if line.strip():
-                                # Split by multiple spaces (common in statements)
-                                parts = [p.strip() for p in line.split('  ') if p.strip()]
-                                if parts:
-                                    all_rows.append(parts)
-    except Exception as e:
-        LOGGER.error(f"Error extracting digital PDF: {e}")
-        raise
-    
-    return all_rows
 
 
 def _extract_text_from_v2_line(line: Any) -> Tuple[Optional[str], Optional[List], Optional[float]]:
@@ -176,7 +109,6 @@ def _normalize_ocr_lines(result: Any) -> List[Dict[str, Any]]:
                 lines.append({"text": text, "x": x, "y": y, "h": h, "score": score})
             continue
 
-        # PaddleOCR 2.x shape: [[box, (text, score)], ...]
         page_lines = page if isinstance(page, list) else []
         for idx, line in enumerate(page_lines):
             text, box, score = _extract_text_from_v2_line(line)
@@ -250,71 +182,15 @@ def _align_group_to_header(
         else:
             cells[nearest_idx] = text
 
-    # Keep normal header labels exactly where OCR found them.
     return cells
 
 
 def extract_ocr_rows(image: np.ndarray) -> List[List[str]]:
-    """Run PaddleOCR and return geometry-preserving rows."""
     try:
-        if image.ndim == 2:
-            image = np.stack([image, image, image], axis=-1)
         ocr = _get_paddle_ocr()
-        if hasattr(ocr, "predict"):
-            result = ocr.predict(image)
-        else:
-            result = ocr.ocr(image, cls=False)
-        return ocr_lines_to_rows(_normalize_ocr_lines(result))
+        result = ocr.ocr(image, cls=False)
+        lines = _normalize_ocr_lines(result)
+        return ocr_lines_to_rows(lines)
     except Exception as e:
-        LOGGER.error(f"Error in PaddleOCR: {e}")
-        return []
-
-
-def run_paddleocr_structure(image: np.ndarray) -> str:
-    """
-    Run PaddleOCR on preprocessed image
-    
-    Args:
-        image: Preprocessed numpy array image
-        
-    Returns:
-        Text extracted from image (simplified version)
-    """
-    try:
-        rows = extract_ocr_rows(image)
-        return '\n'.join(' '.join(row) for row in rows)
-    except Exception as e:
-        LOGGER.error(f"Error in PaddleOCR: {e}")
-        return ""
-
-
-def parse_ocr_text_to_rows(text: str) -> List[List[str]]:
-    """
-    Parse OCR text to list of rows
-    
-    Args:
-        text: Plain text from PaddleOCR
-        
-    Returns:
-        List of rows (each row is a list of cell values)
-    """
-    if not text:
-        return []
-    
-    try:
-        rows = []
-        for line in text.split('\n'):
-            if line.strip():
-                # Split by multiple spaces (common in statements)
-                cells = [cell.strip() for cell in line.split('  ') if cell.strip()]
-                if not cells:
-                    # Fallback: split by single space if no double spaces
-                    cells = [cell.strip() for cell in line.split() if cell.strip()]
-                if cells:
-                    rows.append(cells)
-        
-        return rows
-    
-    except Exception as e:
-        LOGGER.error(f"Error parsing OCR text: {e}")
+        LOGGER.error(f"Failed to extract OCR rows: {e}")
         return []

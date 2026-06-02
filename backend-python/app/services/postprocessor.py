@@ -265,7 +265,7 @@ def parse_date(
                 pass
 
     # 6. Short date "MM/DD" or "DD/MM" with no year
-    m = re.search(r'\b(\d{1,2})/(\d{1,2})\b', s)
+    m = re.search(r'\b(\d{1,2})[/\-\.](\d{1,2})\b', s)
     if m:
         d1, d2 = int(m.group(1)), int(m.group(2))
         yr = year_hint
@@ -451,7 +451,7 @@ def detect_statement_period(
     Returns (year, month) for the primary statement period, or (None, None).
     Used to resolve ambiguous short dates like "12/01" → Dec 2025 vs Dec 2026.
     """
-    for row in rows[:30]:
+    for row in rows[:40]:
         row_text = ' '.join(str(c) for c in row)
 
         # Pattern: "Beginning Balance  12/01/25" or "Date  1/30/26"
@@ -466,6 +466,22 @@ def detect_statement_period(
                 # d1 is likely month (MM/DD/YY in US format)
                 mo = d1 if d1 <= 12 else d2
                 return yr, mo
+
+            # Pattern: "04-2026" / "04/2026" / "2026-04" in statement headers.
+            m_my = re.search(r'\b(0?[1-9]|1[0-2])[/\-](20\d{2})\b', cell_str)
+            if m_my:
+                return int(m_my.group(2)), int(m_my.group(1))
+            m_ym = re.search(r'\b(20\d{2})[/\-](0?[1-9]|1[0-2])\b', cell_str)
+            if m_ym:
+                return int(m_ym.group(1)), int(m_ym.group(2))
+
+        # Fall back to row-level scan for period tokens.
+        m_my = re.search(r'\b(0?[1-9]|1[0-2])[/\-](20\d{2})\b', row_text)
+        if m_my:
+            return int(m_my.group(2)), int(m_my.group(1))
+        m_ym = re.search(r'\b(20\d{2})[/\-](0?[1-9]|1[0-2])\b', row_text)
+        if m_ym:
+            return int(m_ym.group(1)), int(m_ym.group(2))
 
     return None, None
 

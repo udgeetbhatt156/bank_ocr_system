@@ -119,7 +119,9 @@ export async function POST(request: Request) {
         }
 
         if (!skippedDuplicate) {
-          savedDocuments.push(statementToDocumentResult(statement));
+          savedDocuments.push(
+            statementToDocumentResult(statement, { includeRawText: true })
+          );
         }
       } catch (persistErr) {
         const msg =

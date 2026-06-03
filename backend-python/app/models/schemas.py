@@ -40,7 +40,6 @@ class StatementResult(BaseModel):
     # Duplicate detection fields
     file_hash: Optional[str] = None
     content_hash: Optional[str] = None
-    fingerprint: Optional[str] = None
     is_duplicate: bool = False
     duplicate_type: Optional[str] = None
     duplicate_of: Optional[str] = None

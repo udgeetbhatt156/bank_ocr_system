@@ -24,7 +24,6 @@ export type OcrDocumentPayload = {
   // Duplicate detection fields
   file_hash?: string | null;
   content_hash?: string | null;
-  fingerprint?: string | null;
   is_duplicate?: boolean;
   duplicate_type?: string | null;
   duplicate_of?: string | null;

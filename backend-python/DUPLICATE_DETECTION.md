@@ -14,9 +14,9 @@ This document describes the duplicate detection system implemented for the Bank 
 
 ## Solution Architecture
 
-### Multi-Layered Hash-Based Approach
+### Two-Layer Hash-Based Approach
 
-The system uses three complementary strategies to detect duplicates:
+The system uses two strategies to detect duplicates:
 
 #### 1. **File Hash (Exact File Duplicate)**
 - **Method:** SHA-256 hash of the entire PDF binary content
@@ -29,12 +29,6 @@ The system uses three complementary strategies to detect duplicates:
 - **Detects:** Same statement content even if PDF is slightly different (rescanned, different quality)
 - **Use Case:** User scans the same paper statement twice with different scan settings
 - **Confidence:** 100%
-
-#### 3. **Transaction Fingerprint (Similar Content)**
-- **Method:** Hash of key transaction features (date, amounts, description prefix)
-- **Detects:** Near-duplicates with minor OCR variations
-- **Use Case:** OCR extracts slightly different descriptions but same transactions
-- **Confidence:** 95%+
 
 ## Implementation Details
 
@@ -59,33 +53,31 @@ model Statement {
 **Functions:**
 - `generate_file_hash(file_path)` - Creates SHA-256 of PDF binary
 - `generate_content_hash(transactions, metadata)` - Creates hash of extracted data
-- `generate_transaction_fingerprint(transactions)` - Creates fuzzy match fingerprint
-- `calculate_content_similarity(txns1, txns2)` - Compares two transaction sets
+- `calculate_content_similarity(txns1, txns2)` - Compares two transaction sets (utility only)
 
 **Key Features:**
 - Normalizes account numbers (handles `****1234` vs `XXXX1234`)
 - Rounds amounts to avoid floating-point issues
 - Sorts transactions for consistent ordering
-- Extracts description prefixes for fuzzy matching
+- Sorts transactions for consistent content hashing
 
 #### 3. **Duplicate Detector** (`app/services/duplicate_detector.py`)
 **Main Function:** `check_for_duplicates(file_path, transactions, metadata, existing_statements)`
 
 **Returns:** `DuplicateCheckResult` with:
 - `is_duplicate`: Boolean flag
-- `duplicate_type`: "exact_file", "exact_content", or "similar_content"
+- `duplicate_type`: "exact_file" or "exact_content"
 - `confidence`: 0.0 to 1.0
 - `original_filename`: Name of the original statement
 - `message`: User-friendly explanation
-- `file_hash`, `content_hash`, `fingerprint`: Hash values
+- `file_hash`, `content_hash`: Hash values
 
 **Detection Logic:**
 ```python
 1. Generate hashes for uploaded file
 2. Compare file_hash with existing statements → Exact file match
 3. Compare content_hash with existing statements → Exact content match
-4. Compare fingerprint with existing statements → Similar content match
-5. Return result with appropriate confidence level
+4. Return result with appropriate confidence level
 ```
 
 #### 4. **Updated Schemas** (`app/models/schemas.py`)
@@ -93,7 +85,6 @@ Added fields to `StatementResult`:
 ```python
 file_hash: Optional[str]
 content_hash: Optional[str]
-fingerprint: Optional[str]
 is_duplicate: bool
 duplicate_type: Optional[str]
 duplicate_of: Optional[str]
@@ -108,8 +99,8 @@ duplicate_message: Optional[str]
 1. Receive uploaded file
 2. Generate file hash
 3. Process document (OCR extraction)
-4. Generate content hash and fingerprint
-5. Return result with all hash values
+4. Generate content hash
+5. Return result with file_hash and content_hash
 6. Frontend/Backend checks hashes against database
 
 ## Usage Flow
@@ -242,8 +233,7 @@ curl -X POST "http://localhost:8000/api/ocr/process-with-duplicate-check" \
 
 ### Hash Generation Performance
 - **File Hash:** O(n) where n = file size, ~50ms for 5MB PDF
-- **Content Hash:** O(m) where m = number of transactions, ~10ms for 100 transactions
-- **Fingerprint:** O(m log m) due to sorting, ~15ms for 100 transactions
+- **Content Hash:** O(m log m) where m = number of transactions, ~10ms for 100 transactions
 
 ### Database Query Performance
 - Indexed on `fileHash` and `contentHash` for fast lookups
@@ -310,7 +300,6 @@ files: [PDF files]
       "confidence": 0.95,
       "file_hash": "a1b2c3d4...",
       "content_hash": "e5f6g7h8...",
-      "fingerprint": "i9j0k1l2...",
       "is_duplicate": false,
       "duplicate_type": null,
       "duplicate_of": null,

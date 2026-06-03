@@ -14,7 +14,6 @@ from app.services.file_service import write_file
 from app.services.hash_service import (
     generate_content_hash,
     generate_file_hash,
-    generate_transaction_fingerprint,
 )
 from app.services.image_preprocessor import preprocess_scanned_pdf
 from app.services.metadata_extractor import extract_statement_metadata
@@ -50,7 +49,6 @@ def _statement_result(
     header_idx: Optional[int] = None,
     file_hash: Optional[str] = None,
     content_hash: Optional[str] = None,
-    fingerprint: Optional[str] = None,
     is_duplicate: bool = False,
     duplicate_type: Optional[str] = None,
     duplicate_of: Optional[str] = None,
@@ -77,7 +75,6 @@ def _statement_result(
         total_debits=revenue_snapshot["total_debits"],
         file_hash=file_hash,
         content_hash=content_hash,
-        fingerprint=fingerprint,
         is_duplicate=is_duplicate,
         duplicate_type=duplicate_type,
         duplicate_of=duplicate_of,
@@ -725,7 +722,6 @@ async def process_uploaded_file(
 
         file_hash = None
         content_hash = None
-        fingerprint = None
 
         if with_duplicate_check:
             file_hash = generate_file_hash(target_path)
@@ -741,10 +737,8 @@ async def process_uploaded_file(
                 "current_balance": result.current_balance,
             }
             content_hash = generate_content_hash(result.transactions, metadata)
-            fingerprint = generate_transaction_fingerprint(result.transactions)
             result.file_hash = file_hash
             result.content_hash = content_hash
-            result.fingerprint = fingerprint
 
         LOGGER.info(
             f"Done: {original_filename} → "

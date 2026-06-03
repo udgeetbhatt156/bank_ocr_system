@@ -24,3 +24,17 @@ dist/
 Thumbs.db 
 
 .next/
+# Added by code-review-graph
+.code-review-graph/
+.AGENTS.md 
+.CLAUDE.md 
+.CURSOR.md 
+.GEMINI.md 
+.QODER.md 
+.VSC.md 
+.KIRO.md 
+.OPENCODE.md 
+.QODER.md 
+.VSC.md 
+.KIRO.md 
+.OPENCODE.md 

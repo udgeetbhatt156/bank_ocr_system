@@ -39,7 +39,6 @@ from app.services.revenue_filter import apply_revenue_filter
 from app.services.hash_service import (
     generate_file_hash,
     generate_content_hash,
-    generate_transaction_fingerprint,
 )
 from app.services.ocr_pipeline import process_uploaded_file
 
@@ -60,7 +59,6 @@ def _statement_result(
     header_idx: Optional[int] = None,
     file_hash: Optional[str] = None,
     content_hash: Optional[str] = None,
-    fingerprint: Optional[str] = None,
     is_duplicate: bool = False,
     duplicate_type: Optional[str] = None,
     duplicate_of: Optional[str] = None,
@@ -87,7 +85,6 @@ def _statement_result(
         total_debits=revenue_snapshot["total_debits"],
         file_hash=file_hash,
         content_hash=content_hash,
-        fingerprint=fingerprint,
         is_duplicate=is_duplicate,
         duplicate_type=duplicate_type,
         duplicate_of=duplicate_of,
@@ -951,7 +948,6 @@ async def _process_uploaded_file(
 
         file_hash = None
         content_hash = None
-        fingerprint = None
 
         if with_duplicate_check:
             file_hash = generate_file_hash(target_path)
@@ -967,10 +963,8 @@ async def _process_uploaded_file(
                 "current_balance": result.current_balance,
             }
             content_hash = generate_content_hash(result.transactions, metadata)
-            fingerprint = generate_transaction_fingerprint(result.transactions)
             result.file_hash = file_hash
             result.content_hash = content_hash
-            result.fingerprint = fingerprint
 
         LOGGER.info(
             f"Done: {original_filename} → "

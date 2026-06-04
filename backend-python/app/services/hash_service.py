@@ -123,7 +123,6 @@ def _normalize_transactions(transactions: List[Transaction]) -> List[Dict[str, A
             "debit": round(float(txn.debit), 2) if txn.debit else None,
             "credit": round(float(txn.credit), 2) if txn.credit else None,
             "balance": round(float(txn.balance), 2) if txn.balance else None,
-            "reference": txn.reference.strip() if txn.reference else None
         }
         normalized.append(normalized_txn)
     

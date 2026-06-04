@@ -21,13 +21,6 @@ export interface TransactionRecord {
   debit: number | null;
   credit: number | null;
   balance: number | null;
-  reference: string | null;
-  source_line: string;
-  transaction_type?: "credit" | "debit" | "unknown" | null;
-  revenue_status?: "revenue" | "deduction" | null;
-  revenue_deduction_reason?: string | null;
-  revenue_rule?: string | null;
-  adjusted_revenue_amount?: number | null;
 }
 
 export interface DocumentResult {
@@ -40,10 +33,8 @@ export interface DocumentResult {
   account_number?: string | null;
   customer_number?: string | null;
   current_balance?: number | null;
-  raw_credits?: number;
-  adjusted_revenue?: number;
-  revenue_deductions?: number;
   total_debits?: number;
+  total_credits?: number;
   confidence?: number | null;
   pdf_type?: string | null;
 }

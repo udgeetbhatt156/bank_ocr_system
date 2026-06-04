@@ -70,13 +70,6 @@ COLUMN_PATTERNS = {
         r'\bend\s*bal(?:ance)?\b',
         r'\bbalance\b',
     ],
-    'reference': [
-        r'\bref(?:erence)?\s*(?:no|num|number|#)?\b',
-        r'\bcheque\s*(?:no|num|number)?\b',
-        r'\btransaction\s*id\b',
-        r'\butr\b',
-        r'\binstrument\s*no\b',
-    ],
     'check_number': [
         r'\bcheck\s*[#]',
         r'\bcheck\s*(?:no|num|number|nmbr)\b',
@@ -221,7 +214,7 @@ def detect_header_row(rows: List[List[str]]) -> Optional[int]:
         'particulars', 'withdrawal', 'deposit', 'amount', 'narration',
         'transaction', 'details', 'subtractions', 'additions',
         'check', 'posted', 'effective', 'activity', 'tran',
-        'reference', 'debits', 'credits', 'withdrawals', 'deposits',
+        'debits', 'credits', 'withdrawals', 'deposits',
     ]
 
     best_idx: Optional[int] = None

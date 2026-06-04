@@ -8,10 +8,7 @@ import {
   type StatementListItem,
   type TransactionRecord,
 } from "@/lib/api";
-import {
-  classifyTransactionRevenue,
-  getRevenueSnapshot,
-} from "@/lib/revenue-filter";
+import { sumTransactionTotals } from "@/lib/transaction-totals";
 
 export interface UploadFile {
   id: string;
@@ -53,8 +50,6 @@ interface OcrState {
   allTransactions: () => (TransactionRecord & { _filename: string })[];
   summaryStats: () => {
     totalCredits: number;
-    adjustedRevenue: number;
-    revenueDeductions: number;
     totalDebits: number;
     netFlow: number;
     totalTransactions: number;
@@ -255,19 +250,21 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   allTransactions: () => {
     const { documents } = get();
     return documents.flatMap((doc) =>
-      doc.transactions.filter((t) => Number(t.credit || 0)>0 || Number(t.debit || 0) > 0)
-    .map((t) => ({
-        ...t,
-        ...classifyTransactionRevenue(t),
-        _filename: doc.filename,
-      }))
+      doc.transactions
+        .filter((t) => Number(t.credit || 0) > 0 || Number(t.debit || 0) > 0)
+        .map((t) => ({
+          ...t,
+          _filename: doc.filename,
+        }))
     );
   },
 
   summaryStats: () => {
     const { documents } = get();
-    const transactions = documents.flatMap((doc) => doc.transactions).filter((t) => Number(t.credit || 0)>0 || Number(t.debit || 0) > 0);
-    const snapshot = getRevenueSnapshot(transactions);
+    const transactions = documents
+      .flatMap((doc) => doc.transactions)
+      .filter((t) => Number(t.credit || 0) > 0 || Number(t.debit || 0) > 0);
+    const totals = sumTransactionTotals(transactions);
     let totalTransactions = 0;
 
     for (const doc of documents) {
@@ -275,11 +272,9 @@ export const useOcrStore = create<OcrState>((set, get) => ({
     }
 
     return {
-      totalCredits: snapshot.rawCredits,
-      adjustedRevenue: snapshot.adjustedRevenue,
-      revenueDeductions: snapshot.revenueDeductions,
-      totalDebits: snapshot.totalDebits,
-      netFlow: snapshot.netFlow,
+      totalCredits: totals.totalCredits,
+      totalDebits: totals.totalDebits,
+      netFlow: totals.netFlow,
       totalTransactions,
       statementsProcessed: documents.length,
     };

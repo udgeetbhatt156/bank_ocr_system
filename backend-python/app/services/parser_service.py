@@ -59,11 +59,6 @@ def parse_date(raw_text: str) -> Optional[str]:
     return raw_value
 
 
-def extract_reference(raw_text: str) -> Optional[str]:
-    match = REFERENCE_REGEX.search(raw_text)
-    return match.group(1).strip() if match else None
-
-
 def split_columns(raw_line: str) -> List[str]:
     return [segment.strip() for segment in re.split(r"\s{2,}", raw_line) if segment.strip()]
 
@@ -84,8 +79,6 @@ class TransactionRecord:
     debit: Optional[Decimal]
     credit: Optional[Decimal]
     balance: Optional[Decimal]
-    reference: Optional[str]
-    source_line: str
 
 
 def build_transaction(raw_line: str) -> Optional[TransactionRecord]:
@@ -96,7 +89,6 @@ def build_transaction(raw_line: str) -> Optional[TransactionRecord]:
     columns = split_columns(raw_line)
     description = raw_line
     amounts = find_amounts(raw_line)
-    reference = extract_reference(raw_line)
     debit = None
     credit = None
     balance = None
@@ -134,8 +126,6 @@ def build_transaction(raw_line: str) -> Optional[TransactionRecord]:
         debit=debit,
         credit=credit,
         balance=balance,
-        reference=reference,
-        source_line=raw_line,
     )
 
 

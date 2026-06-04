@@ -13,7 +13,6 @@ import {
 } from "@tanstack/react-table";
 import type { ColumnVisibility, TransactionRecord } from "@/lib/api";
 import { formatUSD } from "@/lib/currency";
-import { classifyTransactionRevenue } from "@/lib/revenue-filter";
 import {
   Table,
   TableBody,
@@ -23,7 +22,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft,
   ChevronRight,
@@ -130,40 +128,6 @@ const columns: ColumnDef<TxRow>[] = [
     },
   },
   {
-    id: "revenue_status",
-    header: () => (
-      <span className="text-xs font-semibold uppercase">Revenue Filter</span>
-    ),
-    cell: ({ row }) => {
-      const tx = row.original;
-      if (!Number(tx.credit || 0)) {
-        return <span className="text-sm text-muted-foreground">-</span>;
-      }
-
-      const status = classifyTransactionRevenue(tx);
-      if (status.revenue_status === "deduction") {
-        return (
-          <Badge
-            variant="secondary"
-            className="max-w-[220px] justify-start truncate border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-            title={status.revenue_deduction_reason || "Filtered deduction"}
-          >
-            Deducted: {status.revenue_deduction_reason}
-          </Badge>
-        );
-      }
-
-      return (
-        <Badge
-          variant="secondary"
-          className="border-[var(--credit)]/20 bg-[var(--credit)]/10 text-[var(--credit)]"
-        >
-          Revenue
-        </Badge>
-      );
-    },
-  },
-  {
     accessorKey: "balance",
     header: () => (
       <span className="text-xs font-semibold uppercase">Balance</span>
@@ -178,21 +142,6 @@ const columns: ColumnDef<TxRow>[] = [
       );
     },
   },
-  // {
-  //   accessorKey: "reference",
-  //   header: () => (
-  //     <span className="text-xs font-semibold uppercase">Reference</span>
-  //   ),
-  //   cell: ({ getValue }) => {
-  //     const val = getValue() as string | null;
-  //     if (!val) return <span className="text-sm text-muted-foreground">—</span>;
-  //     return (
-  //       <Badge variant="secondary" className="text-xs font-mono">
-  //         {val}
-  //       </Badge>
-  //     );
-  //   },
-  // },
   // {
   //   accessorKey: "_filename",
   //   header: () => (
@@ -237,22 +186,11 @@ export function TransactionTable({ data, typeFilter = "all" }: TransactionTableP
   const totals = useMemo(() => {
     let debit = 0;
     let credit = 0;
-    let adjustedRevenue = 0;
-    let deductions = 0;
     for (const row of data) {
       debit += Number(row.debit || 0);
-      const rowCredit = Number(row.credit || 0);
-      credit += rowCredit;
-      if (rowCredit > 0) {
-        const status = classifyTransactionRevenue(row);
-        if (status.revenue_status === "deduction") {
-          deductions += rowCredit;
-        } else {
-          adjustedRevenue += rowCredit;
-        }
-      }
+      credit += Number(row.credit || 0);
     }
-    return { debit, credit, adjustedRevenue, deductions };
+    return { debit, credit };
   }, [data]);
   // console.log('Datatatat', data[0])
   if (!data.length) {
@@ -308,17 +246,6 @@ export function TransactionTable({ data, typeFilter = "all" }: TransactionTableP
                   {formatUSD(totals.credit)}
                 </TableCell>
               )}
-              <TableCell className="py-2.5 text-xs text-muted-foreground">
-                {typeFilter !== "debit"
-                  ? `Rev ${formatUSD(totals.adjustedRevenue)}${
-                      totals.deductions > 0
-                        ? ` | Ded ${formatUSD(totals.deductions)}`
-                        : ""
-                    }`
-                  : ""}
-              </TableCell>
-              <TableCell />
-              <TableCell />
               <TableCell />
             </TableRow>
           </TableBody>

@@ -41,12 +41,6 @@
    - Accuracy: 100%
    - Example: Same statement scanned twice
 
-3. **Transaction Fingerprint** (Fuzzy Match)
-   - Detects: Near-duplicates with OCR variations
-   - Speed: ~15 seconds (includes OCR)
-   - Accuracy: 95%+
-   - Example: Minor description differences
-
 ---
 
 ## 🎯 Key Achievements

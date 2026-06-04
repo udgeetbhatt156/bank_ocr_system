@@ -67,8 +67,6 @@ model Transaction {
   debit       Decimal?    @db.Decimal(14, 2)
   credit      Decimal?    @db.Decimal(14, 2)
   balance     Decimal?    @db.Decimal(14, 2)
-  reference   String?
-  sourceLine  String?
   category    String?
   confidence  Float?
   accountId   String

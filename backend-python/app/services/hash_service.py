@@ -94,44 +94,6 @@ def generate_content_hash(
     return content_hash
 
 
-def generate_transaction_fingerprint(transactions: List[Transaction]) -> str:
-    """
-    Generate a fingerprint based on key transaction characteristics.
-    This is more lenient than content_hash and can detect near-duplicates
-    even if some transaction descriptions vary slightly.
-    
-    Args:
-        transactions: List of extracted transactions
-        
-    Returns:
-        Hexadecimal SHA-256 hash string
-    """
-    if not transactions:
-        return hashlib.sha256(b"empty").hexdigest()
-    
-    # Extract key features from transactions
-    fingerprint_data = []
-    
-    for txn in transactions:
-        # Use date, amounts, and first few words of description
-        txn_key = {
-            "date": txn.date,
-            "debit": round(float(txn.debit), 2) if txn.debit else None,
-            "credit": round(float(txn.credit), 2) if txn.credit else None,
-            "desc_prefix": _get_description_prefix(txn.description, words=3)
-        }
-        fingerprint_data.append(txn_key)
-    
-    # Sort by date to ensure consistent ordering
-    fingerprint_data.sort(key=lambda x: x.get("date", ""))
-    
-    fingerprint_json = json.dumps(fingerprint_data, sort_keys=True)
-    fingerprint_hash = hashlib.sha256(fingerprint_json.encode('utf-8')).hexdigest()
-    
-    LOGGER.info(f"Generated transaction fingerprint: {fingerprint_hash[:16]}...")
-    return fingerprint_hash
-
-
 def _normalize_account_number(account_number: str) -> str:
     """
     Normalize account number by removing common variations.
@@ -161,7 +123,6 @@ def _normalize_transactions(transactions: List[Transaction]) -> List[Dict[str, A
             "debit": round(float(txn.debit), 2) if txn.debit else None,
             "credit": round(float(txn.credit), 2) if txn.credit else None,
             "balance": round(float(txn.balance), 2) if txn.balance else None,
-            "reference": txn.reference.strip() if txn.reference else None
         }
         normalized.append(normalized_txn)
     
@@ -173,8 +134,7 @@ def _normalize_transactions(transactions: List[Transaction]) -> List[Dict[str, A
 
 def _get_description_prefix(description: str, words: int = 3) -> str:
     """
-    Extract first N words from description for fingerprinting.
-    This makes fingerprint more resilient to minor description variations.
+    Extract first N words from description for fuzzy transaction matching.
     """
     if not description:
         return ""
@@ -211,15 +171,7 @@ def calculate_content_similarity(
     count_ratio = min(len(transactions1), len(transactions2)) / max(len(transactions1), len(transactions2))
     if count_ratio < 0.8:  # More than 20% difference in count
         return 0.0
-    
-    # Compare transaction fingerprints
-    fp1 = generate_transaction_fingerprint(transactions1)
-    fp2 = generate_transaction_fingerprint(transactions2)
-    
-    if fp1 == fp2:
-        return 1.0
-    
-    # Calculate detailed similarity
+
     matching_transactions = 0
     
     for txn1 in transactions1:

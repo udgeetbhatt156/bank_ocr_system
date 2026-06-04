@@ -61,13 +61,8 @@
 │  │  ├─ Sort: by date and description                                │  │
 │  │  └─ Output: SHA-256 hash                                         │  │
 │  │                                                                   │  │
-│  │  STEP 4: Generate Transaction Fingerprint                        │  │
-│  │  ├─ hash_service.generate_transaction_fingerprint()              │  │
-│  │  ├─ Extract: date, amounts, first 3 words of description         │  │
-│  │  └─ Output: SHA-256 hash (fuzzy matching)                        │  │
-│  │                                                                   │  │
-│  │  STEP 5: Return Result                                           │  │
-│  │  └─ StatementResult with all hashes                              │  │
+│  │  STEP 4: Return Result                                           │  │
+│  │  └─ StatementResult with file_hash and content_hash              │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
@@ -157,7 +152,6 @@ Upload File: "statement_copy.pdf"
                         │                      │
                         │ Generated:           │
                         │ - content_hash       │
-                        │ - fingerprint        │
                         └──────────┬───────────┘
                                    │
                                    ▼
@@ -234,24 +228,22 @@ Input: statement.pdf
                                                             │  }                   │
                                                             └──────────┬───────────┘
                                                                        │
-                                                    ┌──────────────────┴──────────────────┐
-                                                    │                                     │
-                                                    ▼                                     ▼
-                                         ┌──────────────────────┐            ┌──────────────────────┐
-                                         │  CONTENT HASH        │            │  FINGERPRINT         │
-                                         │                      │            │                      │
-                                         │  1. Normalize data:  │            │  1. Extract key      │
-                                         │     - Account: XXXX  │            │     features:        │
-                                         │     - Amounts: 45.67 │            │     - Date           │
-                                         │     - Descriptions   │            │     - Amounts        │
-                                         │  2. Sort by date     │            │     - First 3 words  │
-                                         │  3. JSON stringify   │            │  2. Sort by date     │
-                                         │  4. SHA-256 hash     │            │  3. SHA-256 hash     │
-                                         │  5. Output:          │            │  4. Output:          │
-                                         │     "e5f6g7h8..."    │            │     "i9j0k1l2..."    │
-                                         │                      │            │                      │
-                                         │  Time: ~10ms         │            │  Time: ~15ms         │
-                                         └──────────────────────┘            └──────────────────────┘
+                                                                       ▼
+                                                            ┌──────────────────────┐
+                                                            │  CONTENT HASH        │
+                                                            │                      │
+                                                            │  1. Normalize data:  │
+                                                            │     - Account: XXXX  │
+                                                            │     - Amounts: 45.67 │
+                                                            │     - Descriptions   │
+                                                            │  2. Sort by date     │
+                                                            │  3. JSON stringify   │
+                                                            │  4. SHA-256 hash     │
+                                                            │  5. Output:          │
+                                                            │     "e5f6g7h8..."    │
+                                                            │                      │
+                                                            │  Time: ~10ms         │
+                                                            └──────────────────────┘
 ```
 
 ---
@@ -348,9 +340,7 @@ SCENARIO 2: Content Duplicate (Medium Path)
         │
 15.01s  ├─ Generate content hash
         │
-15.02s  ├─ Generate fingerprint
-        │
-15.03s  ├─ Return to Node.js
+15.02s  ├─ Return to Node.js
         │
 15.04s  ├─ Database query (content hash)
         │  └─ FOUND! Duplicate detected
@@ -375,9 +365,7 @@ SCENARIO 3: Unique Statement (Full Path)
         │
 15.01s  ├─ Generate content hash
         │
-15.02s  ├─ Generate fingerprint
-        │
-15.03s  ├─ Return to Node.js
+15.02s  ├─ Return to Node.js
         │
 15.04s  ├─ Database query (not found)
         │
@@ -492,8 +480,7 @@ This architecture provides:
 
 ✅ **Fast duplicate detection** (60ms for exact file duplicates)  
 ✅ **Robust content matching** (handles rescanned PDFs)  
-✅ **Fuzzy matching** (detects OCR variations)  
-✅ **Minimal overhead** (~85ms total for unique files)  
+✅ **Minimal overhead** (~70ms total for unique files)  
 ✅ **Database integrity** (unique constraints)  
 ✅ **Clear user feedback** (duplicate warnings)  
 ✅ **Comprehensive error handling** (graceful degradation)

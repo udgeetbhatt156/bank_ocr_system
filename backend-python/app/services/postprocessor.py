@@ -500,8 +500,6 @@ def calculate_confidence(transactions: List[Dict]) -> float:
             s += 0.2
         if t.get('debit') is not None or t.get('credit') is not None:
             s += 0.4
-        if t.get('reference'):
-            s += 0.1
         total += s
     return round(total / len(transactions), 2)
 
@@ -525,7 +523,6 @@ def deduplicate_transactions(transactions: List) -> List:
                 "description": getattr(txn, "description", ""),
                 "debit": getattr(txn, "debit", None),
                 "credit": getattr(txn, "credit", None),
-                "reference": getattr(txn, "reference", None),
             }
 
         debit = data.get("debit")
@@ -535,7 +532,6 @@ def deduplicate_transactions(transactions: List) -> List:
             round(float(debit), 2) if debit is not None else None,
             round(float(credit), 2) if credit is not None else None,
             (data.get("description") or "").strip().lower()[:100],
-            (data.get("reference") or "").strip().lower(),
         )
 
         if key in seen:
@@ -544,3 +540,20 @@ def deduplicate_transactions(transactions: List) -> List:
         unique.append(txn)
 
     return unique
+
+
+def sum_transaction_totals(transactions: List) -> Dict[str, float]:
+    """Sum debit and credit columns from extracted transactions."""
+    total_debits = 0.0
+    total_credits = 0.0
+    for txn in transactions:
+        debit = getattr(txn, "debit", None)
+        credit = getattr(txn, "credit", None)
+        if debit:
+            total_debits += float(debit)
+        if credit:
+            total_credits += float(credit)
+    return {
+        "total_debits": round(total_debits, 2),
+        "total_credits": round(total_credits, 2),
+    }

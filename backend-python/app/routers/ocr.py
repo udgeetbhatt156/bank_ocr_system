@@ -33,13 +33,12 @@ from app.services.postprocessor import (
     calculate_confidence,
     detect_statement_period,
     deduplicate_transactions,
+    sum_transaction_totals,
 )
 from app.services.metadata_extractor import extract_statement_metadata
-from app.services.revenue_filter import apply_revenue_filter
 from app.services.hash_service import (
     generate_file_hash,
     generate_content_hash,
-    generate_transaction_fingerprint,
 )
 from app.services.ocr_pipeline import process_uploaded_file
 
@@ -60,7 +59,6 @@ def _statement_result(
     header_idx: Optional[int] = None,
     file_hash: Optional[str] = None,
     content_hash: Optional[str] = None,
-    fingerprint: Optional[str] = None,
     is_duplicate: bool = False,
     duplicate_type: Optional[str] = None,
     duplicate_of: Optional[str] = None,
@@ -68,7 +66,7 @@ def _statement_result(
     duplicate_message: Optional[str] = None,
 ) -> StatementResult:
     transactions = deduplicate_transactions(transactions)
-    revenue_snapshot = apply_revenue_filter(transactions)
+    totals = sum_transaction_totals(transactions)
     meta = extract_statement_metadata(rows, transactions, header_idx=header_idx)
     return StatementResult(
         filename=filename,
@@ -81,13 +79,10 @@ def _statement_result(
         account_number=meta["account_number"],
         customer_number=meta["customer_number"],
         current_balance=meta["current_balance"],
-        raw_credits=revenue_snapshot["raw_credits"],
-        adjusted_revenue=revenue_snapshot["adjusted_revenue"],
-        revenue_deductions=revenue_snapshot["revenue_deductions"],
-        total_debits=revenue_snapshot["total_debits"],
+        total_debits=totals["total_debits"],
+        total_credits=totals["total_credits"],
         file_hash=file_hash,
         content_hash=content_hash,
-        fingerprint=fingerprint,
         is_duplicate=is_duplicate,
         duplicate_type=duplicate_type,
         duplicate_of=duplicate_of,
@@ -257,7 +252,6 @@ def _parse_signed_amount_rows(
             if transactions and row_text:
                 prev = transactions[-1]
                 prev.description = f"{prev.description} {row_text}".strip()
-                prev.source_line = f"{prev.source_line} | {row_text}"
             continue
 
         # ── Identify amount and balance from the right side ──
@@ -318,8 +312,6 @@ def _parse_signed_amount_rows(
             debit=debit,
             credit=credit,
             balance=balance,
-            reference=None,
-            source_line=" | ".join(str(c) for c in row),
         ))
 
     return transactions
@@ -339,7 +331,7 @@ def _parse_multicolumn_rows(
       Date | Check# | TranCode | Description | Amount | Balance
 
     Where Amount uses parentheses for debits: ($234.18) = debit, $1500 = credit.
-    The check number is used as a reference.
+    Check numbers are included in the transaction description.
     """
     transactions: List[Transaction] = []
     data_rows = rows[header_idx + 1:]
@@ -349,7 +341,6 @@ def _parse_multicolumn_rows(
     desc_col = col_map.get('description')
     amount_col = col_map.get('amount')
     balance_col = col_map.get('balance')
-    check_col = col_map.get('check_number') or col_map.get('reference')
     tran_code_col = col_map.get('tran_code')
 
     for row in data_rows:
@@ -366,7 +357,6 @@ def _parse_multicolumn_rows(
             if transactions and row_text:
                 prev = transactions[-1]
                 prev.description = f"{prev.description} {row_text}".strip()
-                prev.source_line = f"{prev.source_line} | {row_text}"
             continue
 
         # ── Description ──
@@ -406,20 +396,12 @@ def _parse_multicolumn_rows(
                 balance = abs(balance)
 
         # ── Reference ──
-        reference: Optional[str] = None
-        if check_col is not None and check_col < len(row):
-            ref = str(row[check_col]).strip()
-            if ref and ref.lower() not in ('', 'none'):
-                reference = ref
-
         transactions.append(Transaction(
             date=date_str,
             description=description,
             debit=debit,
             credit=credit,
             balance=balance,
-            reference=reference,
-            source_line=" | ".join(str(c) for c in row),
         ))
 
     return transactions
@@ -670,20 +652,12 @@ def process_single_statement(file_path: Path) -> StatementResult:
             if balance is not None:
                 balance = abs(balance)
 
-        # Reference
-        reference: Optional[str] = None
-        ref_col = col_map.get('reference') or col_map.get('check_number')
-        if ref_col is not None and ref_col < len(row):
-            reference = str(row[ref_col]).strip() or None
-
         transactions.append(Transaction(
             date=date_str,
             description=desc,
             debit=debit,
             credit=credit,
             balance=balance,
-            reference=reference,
-            source_line=" | ".join(str(c) for c in row),
         ))
 
     transactions.extend(_parse_check_detail_rows(rows, statement_year=stmt_year))
@@ -812,8 +786,6 @@ def _parse_lines_heuristic(
             debit=debit,
             credit=credit,
             balance=balance,
-            reference=None,
-            source_line=full_line,
         ))
 
     return transactions
@@ -862,7 +834,6 @@ def _parse_additions_subtractions_rows(
             if transactions and row_text:
                 previous = transactions[-1]
                 previous.description = f"{previous.description} {row_text}".strip()
-                previous.source_line = f"{previous.source_line} | {row_text}"
             continue
 
         description = str(row[1]).strip() if len(row) > 1 else row_text
@@ -886,8 +857,6 @@ def _parse_additions_subtractions_rows(
             debit=debit,
             credit=credit,
             balance=None,
-            reference=None,
-            source_line=" | ".join(str(c) for c in row),
         ))
 
     return transactions
@@ -929,8 +898,6 @@ def _parse_check_detail_rows(
                 debit=abs(amount),
                 credit=None,
                 balance=None,
-                reference=check_number,
-                source_line=match.group(0),
             ))
 
     return transactions
@@ -951,7 +918,6 @@ async def _process_uploaded_file(
 
         file_hash = None
         content_hash = None
-        fingerprint = None
 
         if with_duplicate_check:
             file_hash = generate_file_hash(target_path)
@@ -967,10 +933,8 @@ async def _process_uploaded_file(
                 "current_balance": result.current_balance,
             }
             content_hash = generate_content_hash(result.transactions, metadata)
-            fingerprint = generate_transaction_fingerprint(result.transactions)
             result.file_hash = file_hash
             result.content_hash = content_hash
-            result.fingerprint = fingerprint
 
         LOGGER.info(
             f"Done: {original_filename} → "

@@ -12,13 +12,6 @@ class Transaction(BaseModel):
     debit: Optional[float] = None
     credit: Optional[float] = None
     balance: Optional[float] = None
-    reference: Optional[str] = None
-    source_line: str
-    transaction_type: Optional[str] = None
-    revenue_status: Optional[str] = None
-    revenue_deduction_reason: Optional[str] = None
-    revenue_rule: Optional[str] = None
-    adjusted_revenue_amount: Optional[float] = None
 
 
 class StatementResult(BaseModel):
@@ -33,14 +26,11 @@ class StatementResult(BaseModel):
     account_number: Optional[str] = None
     customer_number: Optional[str] = None
     current_balance: Optional[float] = None
-    raw_credits: float = 0.0
-    adjusted_revenue: float = 0.0
-    revenue_deductions: float = 0.0
     total_debits: float = 0.0
+    total_credits: float = 0.0
     # Duplicate detection fields
     file_hash: Optional[str] = None
     content_hash: Optional[str] = None
-    fingerprint: Optional[str] = None
     is_duplicate: bool = False
     duplicate_type: Optional[str] = None
     duplicate_of: Optional[str] = None

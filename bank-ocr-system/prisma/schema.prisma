@@ -21,9 +21,9 @@ model BankAccount {
   accountNumber  String
   bankName       String
   accountHolder  String?
-  customerNumber String?
   createdAt      DateTime      @default(now())
   userId         String
+  customerNumber String?
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   statements     Statement[]
   transactions   Transaction[]
@@ -33,26 +33,26 @@ model BankAccount {
 }
 
 model Statement {
-  id               String        @id @default(cuid())
-  fileName         String
-  filePath         String
-  fileHash         String?       // SHA-256 hash of file content for duplicate detection
-  contentHash      String?       // Hash of extracted transaction data
-  uploadedAt       DateTime      @default(now())
-  processedAt      DateTime?
-  status           String        @default("pending")
-  confidence       Float?
-  pdfType          String?
-  bankName         String?
-  accountNumber    String?
-  customerNumber   String?
-  currentBalance   Decimal?      @db.Decimal(14, 2)
-  accountId        String
-  account          BankAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  rawData          Json?
-  transactions     Transaction[]
-  isDuplicate      Boolean       @default(false)
-  duplicateOfId    String?       // Reference to original statement if this is a duplicate
+  id             String        @id @default(cuid())
+  fileName       String
+  filePath       String
+  uploadedAt     DateTime      @default(now())
+  processedAt    DateTime?
+  status         String        @default("pending")
+  accountId      String
+  rawData        Json?
+  accountNumber  String?
+  bankName       String?
+  confidence     Float?
+  currentBalance Decimal?      @db.Decimal(14, 2)
+  customerNumber String?
+  pdfType        String?
+  contentHash    String?
+  duplicateOfId  String?
+  fileHash       String?
+  isDuplicate    Boolean       @default(false)
+  account        BankAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
 
   @@index([accountId])
   @@index([fileName])
@@ -71,9 +71,9 @@ model Transaction {
   confidence  Float?
   accountId   String
   statementId String
+  createdAt   DateTime    @default(now())
   account     BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   statement   Statement   @relation(fields: [statementId], references: [id], onDelete: Cascade)
-  createdAt   DateTime    @default(now())
 
   @@index([statementId])
   @@index([accountId])

@@ -202,43 +202,8 @@ export async function persistOcrDocument(
   doc: OcrDocumentPayload,
   fileBuffer: Buffer
 ): Promise<PersistOcrResult> {
-  // User-wide duplicate checks — same file/content must not create a second statement
-  if (doc.file_hash) {
-    const duplicateByFileHash = await prisma.statement.findFirst({
-      where: {
-        fileHash: doc.file_hash,
-        account: { userId },
-      },
-      select: { id: true, fileName: true },
-    });
-
-    if (duplicateByFileHash) {
-      return {
-        statementId: duplicateByFileHash.id,
-        skippedDuplicate: true,
-        duplicateOf: duplicateByFileHash.fileName,
-      };
-    }
-  }
-
-  if (doc.content_hash) {
-    const duplicateByContentHash = await prisma.statement.findFirst({
-      where: {
-        contentHash: doc.content_hash,
-        account: { userId },
-      },
-      select: { id: true, fileName: true },
-    });
-
-    if (duplicateByContentHash) {
-      return {
-        statementId: duplicateByContentHash.id,
-        skippedDuplicate: true,
-        duplicateOf: duplicateByContentHash.fileName,
-      };
-    }
-  }
-
+  // Duplicate checks disabled - all uploads are now saved
+  
   const accountNumber =
     doc.account_number?.trim() || `account-${userId.slice(0, 8)}`;
   const bankName = doc.bank_name?.trim() || "Unknown Bank";

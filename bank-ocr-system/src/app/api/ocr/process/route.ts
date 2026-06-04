@@ -86,9 +86,20 @@ export async function POST(request: Request) {
     const savedDocuments = [];
     const persistErrors: string[] = [];
     const skippedDuplicates: string[] = [];
+    const rejectedStatements: string[] = [];
 
     for (let i = 0; i < ocrData.documents.length; i++) {
       const doc = ocrData.documents[i];
+      if (doc.rejected || doc.is_altered) {
+        const reasons = doc.alteration_reasons?.length
+          ? ` Reasons: ${doc.alteration_reasons.join("; ")}`
+          : "";
+        rejectedStatements.push(
+          `${doc.filename}: ${doc.rejection_reason || "Statement rejected."}${reasons}`
+        );
+        continue;
+      }
+
       const buffer = resolveFileBuffer(doc, fileBuffers, i);
 
       if (!buffer) {
@@ -131,17 +142,24 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!savedDocuments.length && persistErrors.length && !skippedDuplicates.length) {
+    if (
+      !savedDocuments.length &&
+      (persistErrors.length || rejectedStatements.length) &&
+      !skippedDuplicates.length
+    ) {
       return NextResponse.json(
         {
-          error: "Failed to save statements to database",
-          detail: persistErrors.join("; "),
+          error: rejectedStatements.length
+            ? "One or more statements were rejected"
+            : "Failed to save statements to database",
+          detail: [...rejectedStatements, ...persistErrors].join("; "),
         },
-        { status: 500 }
+        { status: rejectedStatements.length ? 422 : 500 }
       );
     }
 
     const warnings = [
+      ...rejectedStatements,
       ...persistErrors,
       ...skippedDuplicates,
     ].filter(Boolean);

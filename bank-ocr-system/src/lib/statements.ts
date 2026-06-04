@@ -1,5 +1,6 @@
 import path from "path";
 import { promises as fs } from "fs";
+import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import type { DocumentResult, TransactionRecord } from "@/lib/api";
@@ -27,6 +28,13 @@ export type OcrDocumentPayload = {
   duplicate_of?: string | null;
   duplicate_confidence?: number | null;
   duplicate_message?: string | null;
+  is_altered?: boolean;
+  alteration_risk_score?: number;
+  alteration_risk_level?: string | null;
+  alteration_reasons?: string[];
+  alteration_signals?: Prisma.JsonObject;
+  rejected?: boolean;
+  rejection_reason?: string | null;
 };
 
 /** OCR metadata stored in Statement.rawData (works even if Prisma client is stale) */
@@ -41,6 +49,13 @@ type StoredStatementMeta = {
   current_balance?: number | null;
   total_debits?: number | null;
   total_credits?: number | null;
+  is_altered?: boolean;
+  alteration_risk_score?: number | null;
+  alteration_risk_level?: string | null;
+  alteration_reasons?: string[];
+  alteration_signals?: Prisma.JsonObject;
+  rejected?: boolean;
+  rejection_reason?: string | null;
 };
 
 function normalizeSyntheticAccountNumber(value: string | null | undefined): string | null {
@@ -78,6 +93,10 @@ function safeFileName(name: string) {
 }
 
 function buildRawData(doc: OcrDocumentPayload): StoredStatementMeta {
+  const alterationSignals = JSON.parse(
+    JSON.stringify(doc.alteration_signals ?? {})
+  ) as Prisma.JsonObject;
+
   return {
     raw_text: doc.raw_text ?? "",
     warnings: doc.warnings ?? [],
@@ -89,6 +108,13 @@ function buildRawData(doc: OcrDocumentPayload): StoredStatementMeta {
     current_balance: doc.current_balance ?? null,
     total_debits: doc.total_debits ?? null,
     total_credits: doc.total_credits ?? null,
+    is_altered: doc.is_altered ?? false,
+    alteration_risk_score: doc.alteration_risk_score ?? null,
+    alteration_risk_level: doc.alteration_risk_level ?? null,
+    alteration_reasons: doc.alteration_reasons ?? [],
+    alteration_signals: alterationSignals,
+    rejected: doc.rejected ?? false,
+    rejection_reason: doc.rejection_reason ?? null,
   };
 }
 

@@ -2,7 +2,8 @@
 Pydantic models for API request/response
 """
 from typing import List, Optional
-from pydantic import BaseModel
+from typing import Any, Dict
+from pydantic import BaseModel, Field
 
 
 class Transaction(BaseModel):
@@ -36,6 +37,14 @@ class StatementResult(BaseModel):
     duplicate_of: Optional[str] = None
     duplicate_confidence: Optional[float] = None
     duplicate_message: Optional[str] = None
+    # Altered/fraud-risk detection fields
+    is_altered: bool = False
+    alteration_risk_score: int = 0
+    alteration_risk_level: Optional[str] = None
+    alteration_reasons: List[str] = Field(default_factory=list)
+    alteration_signals: Dict[str, Any] = Field(default_factory=dict)
+    rejected: bool = False
+    rejection_reason: Optional[str] = None
 
 
 class OCRResponse(BaseModel):

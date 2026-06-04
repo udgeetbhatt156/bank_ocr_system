@@ -36,25 +36,30 @@ def _get_paddle_ocr():
     if paddle_ocr is None:
         from paddleocr import PaddleOCR
 
-        try:
-            # Optimized settings for maximum speed while maintaining accuracy
-            paddle_ocr = PaddleOCR(
-                lang="en",
-                use_angle_cls=False,  # Disable angle classification for speed
-                use_gpu=False,  # CPU mode (set to True if GPU available)
-                show_log=False,  # Disable verbose logging for speed
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
-            )
-        except TypeError:
-            # PaddleOCR 2.x compatibility.
-            paddle_ocr = PaddleOCR(
-                lang="en",
-                use_angle_cls=False,
-                use_gpu=False,
-                show_log=False
-            )
+        attempts = [
+            {
+                "lang": "en",
+                "use_doc_orientation_classify": False,
+                "use_doc_unwarping": False,
+                "use_textline_orientation": False,
+            },
+            {"lang": "en"},
+            {
+                "lang": "en",
+                "use_angle_cls": False,
+                "use_gpu": False,
+                "show_log": False,
+            },
+        ]
+        last_error = None
+        for kwargs in attempts:
+            try:
+                paddle_ocr = PaddleOCR(**kwargs)
+                break
+            except TypeError as exc:
+                last_error = exc
+        if paddle_ocr is None:
+            raise last_error or RuntimeError("Unable to initialize PaddleOCR")
     return paddle_ocr
 
 

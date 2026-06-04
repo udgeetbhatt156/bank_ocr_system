@@ -5,6 +5,18 @@ from typing import List
 import pdfplumber
 
 
+def normalize_extracted_cell(value: str) -> str:
+    """
+    Clean common digital-PDF extraction artifacts without touching numbers.
+
+    Some statement PDFs emit repeated glyphs such as TTTToooottttaaaallll and
+    $$$$99990000....00000000. Collapsing non-digit runs keeps real amounts from
+    losing digits while making headers/parser keywords usable again.
+    """
+    value = re.sub(r'([A-Za-z$.,:/#])\1{2,}', r'\1', value)
+    return re.sub(r'\s+', ' ', value).strip()
+
+
 def extract_digital_pdf(file_path: Path) -> List[List[str]]:
     """Extract rows from a digital PDF using pdfplumber."""
     all_rows: List[List[str]] = []
@@ -24,7 +36,10 @@ def extract_digital_pdf(file_path: Path) -> List[List[str]]:
             if tables:
                 for table in tables:
                     for row in table:
-                        cleaned = [str(c).strip() if c else "" for c in row]
+                        cleaned = [
+                            normalize_extracted_cell(str(c)) if c else ""
+                            for c in row
+                        ]
                         if any(cleaned):
                             all_rows.append(cleaned)
                 continue
@@ -38,7 +53,11 @@ def extract_digital_pdf(file_path: Path) -> List[List[str]]:
             if not words:
                 text = page.extract_text() or ""
                 for line in text.splitlines():
-                    parts = [p.strip() for p in re.split(r'\s{2,}', line) if p.strip()]
+                    parts = [
+                        normalize_extracted_cell(p)
+                        for p in re.split(r'\s{2,}', line)
+                        if p.strip()
+                    ]
                     if parts:
                         all_rows.append(parts)
                 continue
@@ -61,11 +80,11 @@ def extract_digital_pdf(file_path: Path) -> List[List[str]]:
                 for prev, curr in zip(line_words, line_words[1:]):
                     gap = curr['x0'] - prev['x1']
                     if gap > col_gap:
-                        cols.append(current.strip())
+                        cols.append(normalize_extracted_cell(current))
                         current = curr['text']
                     else:
                         current += ' ' + curr['text']
-                cols.append(current.strip())
+                cols.append(normalize_extracted_cell(current))
                 if any(cols):
                     all_rows.append(cols)
 

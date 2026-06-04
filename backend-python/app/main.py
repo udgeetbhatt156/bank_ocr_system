@@ -22,6 +22,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -44,4 +45,15 @@ def health_check():
             "Automatic column mapping",
             "Wrapped row detection"
         ]
+    }
+
+
+@app.get("/health")
+def root_health_check():
+    return {
+        "status": "ok",
+        "service": "Bank OCR Service",
+        "version": "2.0.0",
+        "engine": "PaddleOCR + PyMuPDF",
+        "uptime": "Active",
     }

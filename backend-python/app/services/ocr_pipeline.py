@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from fastapi import UploadFile
 from app.core.config import UPLOAD_DIR
 from app.models.schemas import StatementResult, Transaction
+from app.services.altered_statement_detector import detect_altered_statement
 from app.services.amount_utils import clean_amount
 from app.services.date_utils import parse_date
 from app.services.digital_extractor import extract_with_pdfplumber
@@ -33,6 +34,7 @@ from app.services.postprocessor import (
     deduplicate_transactions,
     sum_transaction_totals,
 )
+from app.services.statement_templates import select_statement_template
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +56,13 @@ def _statement_result(
     duplicate_of: Optional[str] = None,
     duplicate_confidence: Optional[float] = None,
     duplicate_message: Optional[str] = None,
+    is_altered: bool = False,
+    alteration_risk_score: int = 0,
+    alteration_risk_level: Optional[str] = None,
+    alteration_reasons: Optional[List[str]] = None,
+    alteration_signals: Optional[Dict] = None,
+    rejected: bool = False,
+    rejection_reason: Optional[str] = None,
 ) -> StatementResult:
     transactions = deduplicate_transactions(transactions)
     totals = sum_transaction_totals(transactions)
@@ -78,6 +87,13 @@ def _statement_result(
         duplicate_of=duplicate_of,
         duplicate_confidence=duplicate_confidence,
         duplicate_message=duplicate_message,
+        is_altered=is_altered,
+        alteration_risk_score=alteration_risk_score,
+        alteration_risk_level=alteration_risk_level,
+        alteration_reasons=alteration_reasons or [],
+        alteration_signals=alteration_signals or {},
+        rejected=rejected,
+        rejection_reason=rejection_reason,
     )
 
 
@@ -278,6 +294,34 @@ def _detect_format(col_map: Dict, rows: List[List[str]], header_idx: int) -> str
 
 def process_single_statement(file_path: Path) -> StatementResult:
     warnings: List[str] = []
+    alteration = detect_altered_statement(file_path)
+    if alteration.is_altered:
+        LOGGER.warning(
+            "[%s] rejected altered statement risk=%s score=%s reasons=%s",
+            file_path.name,
+            alteration.risk_level,
+            alteration.risk_score,
+            alteration.reasons,
+        )
+        return _statement_result(
+            filename=file_path.name,
+            transactions=[],
+            confidence=0.0,
+            pdf_type="rejected",
+            warnings=[alteration.message, *alteration.reasons],
+            rows=[],
+            raw_text="",
+            is_altered=True,
+            alteration_risk_score=alteration.risk_score,
+            alteration_risk_level=alteration.risk_level,
+            alteration_reasons=alteration.reasons,
+            alteration_signals=alteration.signals,
+            rejected=True,
+            rejection_reason=alteration.message,
+        )
+    if alteration.reasons:
+        warnings.extend(f"Alteration screen: {reason}" for reason in alteration.reasons)
+
     suffix = file_path.suffix.lower()
     is_image = suffix in {'.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'}
 
@@ -323,10 +367,26 @@ def process_single_statement(file_path: Path) -> StatementResult:
 
     stmt_year, stmt_month = detect_statement_period(rows)
     LOGGER.info(f"[{file_path.name}] statement_period year={stmt_year} month={stmt_month}")
-
-    add_sub_transactions = _parse_additions_subtractions_rows(
-        rows, statement_year=stmt_year
+    preliminary_meta = extract_statement_metadata(rows, [], header_idx=None)
+    template = select_statement_template(
+        rows,
+        filename=file_path.name,
+        bank_name=preliminary_meta.get("bank_name"),
     )
+    if template:
+        LOGGER.info(
+            "[%s] template=%s layout=%s parser=%s",
+            file_path.name,
+            template.template_id,
+            template.layout_family,
+            template.parser_format,
+        )
+
+    add_sub_transactions: List[Transaction] = []
+    if template is None or template.parser_format == "additions_subtractions":
+        add_sub_transactions = _parse_additions_subtractions_rows(
+            rows, statement_year=stmt_year
+        )
     if add_sub_transactions:
         confidence = calculate_confidence([t.dict() for t in add_sub_transactions])
         raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
@@ -373,7 +433,11 @@ def process_single_statement(file_path: Path) -> StatementResult:
             header_idx=header_idx,
         )
 
-    fmt = _detect_format(col_map, rows, header_idx)
+    fmt = (
+        template.parser_format
+        if template and template.parser_format in {"signed_amount", "multicolumn", "standard"}
+        else _detect_format(col_map, rows, header_idx)
+    )
     LOGGER.info(f"[{file_path.name}] format={fmt}")
 
     if fmt == "signed_amount":

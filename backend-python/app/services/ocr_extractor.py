@@ -18,23 +18,30 @@ def _get_paddle_ocr():
     if paddle_ocr is None:
         from paddleocr import PaddleOCR
 
-        try:
-            paddle_ocr = PaddleOCR(
-                lang="en",
-                use_angle_cls=False,
-                use_gpu=False,
-                show_log=False,
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
-            )
-        except TypeError:
-            paddle_ocr = PaddleOCR(
-                lang="en",
-                use_angle_cls=False,
-                use_gpu=False,
-                show_log=False,
-            )
+        attempts = [
+            {
+                "lang": "en",
+                "use_doc_orientation_classify": False,
+                "use_doc_unwarping": False,
+                "use_textline_orientation": False,
+            },
+            {"lang": "en"},
+            {
+                "lang": "en",
+                "use_angle_cls": False,
+                "use_gpu": False,
+                "show_log": False,
+            },
+        ]
+        last_error = None
+        for kwargs in attempts:
+            try:
+                paddle_ocr = PaddleOCR(**kwargs)
+                break
+            except TypeError as exc:
+                last_error = exc
+        if paddle_ocr is None:
+            raise last_error or RuntimeError("Unable to initialize PaddleOCR")
     return paddle_ocr
 
 
@@ -188,7 +195,10 @@ def _align_group_to_header(
 def extract_ocr_rows(image: np.ndarray) -> List[List[str]]:
     try:
         ocr = _get_paddle_ocr()
-        result = ocr.ocr(image, cls=False)
+        if hasattr(ocr, "predict"):
+            result = ocr.predict(image)
+        else:
+            result = ocr.ocr(image, cls=False)
         lines = _normalize_ocr_lines(result)
         return ocr_lines_to_rows(lines)
     except Exception as e:

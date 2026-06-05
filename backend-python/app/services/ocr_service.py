@@ -5,6 +5,7 @@ from typing import List
 
 from paddleocr import PaddleOCR
 from PIL import Image
+from typing import List
 
 from app.services.pdf_service import render_pdf_pages
 
@@ -65,9 +66,6 @@ def _normalize_text(text: str) -> str:
 #             except Exception:
 #                 LOGGER.warning("Unable to remove temporary image %s", image_path)
 
-from pathlib import Path
-import logging
-from typing import List
 
 LOGGER = logging.getLogger(__name__)
 

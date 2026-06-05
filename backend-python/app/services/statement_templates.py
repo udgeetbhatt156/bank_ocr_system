@@ -24,6 +24,77 @@ class StatementTemplate:
 
 TEMPLATES: List[StatementTemplate] = [
     StatementTemplate(
+        template_id="genreich_signed_amount_v1",
+        bank_name="Unknown",
+        layout_family="single_signed_amount_with_running_balance",
+        parser_format="signed_amount",
+        bank_patterns=["genreich", "statement of account", "business checking"],
+        header_keywords=["date", "transaction detail", "amount", "balance"],
+        amount_rules={
+            "trailing_minus_is_debit": True,
+            "positive_is_credit": True,
+        },
+        sample_files=["GENREICH_FEBUARY_1_.pdf"],
+    ),
+    StatementTemplate(
+        template_id="chase_repeated_blocks_v1",
+        bank_name="JPMorgan Chase",
+        layout_family="repeated_horizontal_blocks",
+        parser_format="repeated_blocks",
+        bank_patterns=["jpmorgan chase", "chase.com", "perry systems"],
+        header_keywords=["date", "description", "amount"],
+        amount_rules={
+            "section_context": True,
+            "negative_is_debit": True,
+        },
+        sample_files=["20260326173751_PERRY_SYSTEMS_LLC_FEB_.pdf"],
+    ),
+    StatementTemplate(
+        template_id="bank_of_america_sectioned_v1",
+        bank_name="Bank of America",
+        layout_family="sectioned_deposits_withdrawals",
+        parser_format="sectioned",
+        bank_patterns=["bank of america", "business advantage", "zason latino"],
+        header_keywords=[
+            "deposits and other credits",
+            "withdrawals and other debits",
+            "date",
+            "description",
+            "amount",
+        ],
+        amount_rules={
+            "section_deposits_are_credit": True,
+            "section_withdrawals_are_debit": True,
+        },
+        sample_files=["april.pdf"],
+    ),
+    StatementTemplate(
+        template_id="sofi_digital_activity_v1",
+        bank_name="SoFi",
+        layout_family="digital_activity_statement",
+        parser_format="standard",
+        bank_patterns=["sofi", "integrative llc"],
+        header_keywords=["date", "description", "amount", "balance"],
+        amount_rules={
+            "negative_is_debit": True,
+            "positive_is_credit": True,
+        },
+        sample_files=["SoFi_Apr_2026_Statement.pdf"],
+    ),
+    StatementTemplate(
+        template_id="navy_federal_scanned_v1",
+        bank_name="Navy Federal Credit Union",
+        layout_family="scanned_ocr_table",
+        parser_format="standard",
+        bank_patterns=["navy federal", "navy_federal"],
+        header_keywords=["date", "description", "amount", "balance"],
+        amount_rules={
+            "negative_is_debit": True,
+            "positive_is_credit": True,
+        },
+        sample_files=["Navy_Federal_December_Business_Statement_.pdf"],
+    ),
+    StatementTemplate(
         template_id="peoplessouth_signed_amount_v1",
         bank_name="PeopleSouth Bank",
         layout_family="single_signed_amount_with_running_balance",

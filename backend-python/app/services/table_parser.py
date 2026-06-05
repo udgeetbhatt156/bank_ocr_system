@@ -27,6 +27,7 @@ COLUMN_PATTERNS = {
     'description': [
         r'\btransaction\s*description\b',
         r'\btransaction\s*details\b',
+        r'\btransaction\s*detail\b',
         r'\bdescription\b',
         r'\bparticulars\b',
         r'\bnarration\b',
@@ -80,7 +81,7 @@ COLUMN_PATTERNS = {
         r'\btran(?:saction)?\s*type\b',
     ],
     'amount': [
-        r'^amount$',
+        r'\bamount\b',
         r'\btransaction\s*amount\b',
     ],
 }
@@ -94,6 +95,43 @@ _AMOUNT_LIKE_RE = re.compile(
 )
 
 
+def _normalize_header_text(value: str) -> str:
+    text = re.sub(r'\s+', ' ', str(value or '')).strip().lower()
+    replacements = {
+        "tran saction": "transaction",
+        "trans action": "transaction",
+        "desc ription": "description",
+        "de script ion": "description",
+        "amt": "amount",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    text = re.sub(r'\bsaction\s+detail\b', 'transaction detail', text)
+    text = re.sub(r'\bription\b', 'description', text)
+    text = re.sub(r'amount\s*\(?\$?\)?', 'amount', text)
+    text = re.sub(r'balance\s*\(?\$?\)?', 'balance', text)
+    return text
+
+
+def normalize_header_row(header_row: List[str]) -> List[str]:
+    """Normalize OCR/pdfplumber-fragmented header cells while preserving indices."""
+    normalized = [_normalize_header_text(cell) for cell in header_row]
+    result = list(normalized)
+    for idx, text in enumerate(normalized):
+        nxt = normalized[idx + 1] if idx + 1 < len(normalized) else ""
+        combo = f"{text} {nxt}".strip()
+        if re.search(r'\bdate\s+desc(?:ription)?\b', combo):
+            result[idx] = "date"
+            if idx + 1 < len(result):
+                result[idx + 1] = "description"
+        elif "date tran" in combo or "transaction detail" in combo:
+            if "date" in text:
+                result[idx] = "date"
+            if idx + 1 < len(result):
+                result[idx + 1] = "transaction detail"
+    return result
+
+
 def map_columns(header_row: List[str]) -> Dict[str, int]:
     """
     Map column headers to their indices.
@@ -105,7 +143,9 @@ def map_columns(header_row: List[str]) -> Dict[str, int]:
     column_map: Dict[str, int] = {}
     used_indices: set = set()
 
-    for idx, header in enumerate(header_row):
+    normalized_row = normalize_header_row(header_row)
+
+    for idx, header in enumerate(normalized_row):
         if not header:
             continue
         header_lower = header.lower().strip()
@@ -221,7 +261,8 @@ def detect_header_row(rows: List[List[str]]) -> Optional[int]:
     best_score = 0
 
     for idx, row in enumerate(rows[:80]):
-        row_text = ' '.join(str(c) for c in row).lower()
+        normalized_row = normalize_header_row(row)
+        row_text = ' '.join(str(c) for c in normalized_row).lower()
         score = sum(
             1 for kw in header_keywords
             if re.search(r'\b' + kw + r'\b', row_text)

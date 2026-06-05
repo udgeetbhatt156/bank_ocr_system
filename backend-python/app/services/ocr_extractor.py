@@ -91,6 +91,30 @@ def _box_center(box: Any) -> Tuple[float, float, float]:
     return 0.0, 0.0, 12.0
 
 
+def _box_bounds(box: Any) -> Dict[str, Optional[float]]:
+    if box is None:
+        return {"x0": None, "top": None, "x1": None, "bottom": None}
+    arr = np.array(box, dtype=float)
+    if arr.ndim == 1 and arr.size >= 4:
+        x0, y0, x1, y1 = arr[:4]
+        return {
+            "x0": float(min(x0, x1)),
+            "top": float(min(y0, y1)),
+            "x1": float(max(x0, x1)),
+            "bottom": float(max(y0, y1)),
+        }
+    if arr.ndim >= 2 and arr.shape[0] >= 2:
+        xs = arr[:, 0]
+        ys = arr[:, 1]
+        return {
+            "x0": float(xs.min()),
+            "top": float(ys.min()),
+            "x1": float(xs.max()),
+            "bottom": float(ys.max()),
+        }
+    return {"x0": None, "top": None, "x1": None, "bottom": None}
+
+
 def _normalize_ocr_lines(result: Any) -> List[Dict[str, Any]]:
     lines: List[Dict[str, Any]] = []
 
@@ -113,7 +137,14 @@ def _normalize_ocr_lines(result: Any) -> List[Dict[str, Any]]:
                 box = boxes[idx] if idx < len(boxes) else None
                 score = scores[idx] if idx < len(scores) else None
                 x, y, h = _box_center(box) if box is not None else (0.0, float(idx * 14), 12.0)
-                lines.append({"text": text, "x": x, "y": y, "h": h, "score": score})
+                lines.append({
+                    "text": text,
+                    "x": x,
+                    "y": y,
+                    "h": h,
+                    "score": score,
+                    **_box_bounds(box),
+                })
             continue
 
         page_lines = page if isinstance(page, list) else []
@@ -122,7 +153,14 @@ def _normalize_ocr_lines(result: Any) -> List[Dict[str, Any]]:
             if not text:
                 continue
             x, y, h = _box_center(box) if box is not None else (0.0, float(idx * 14), 12.0)
-            lines.append({"text": text, "x": x, "y": y, "h": h, "score": score})
+            lines.append({
+                "text": text,
+                "x": x,
+                "y": y,
+                "h": h,
+                "score": score,
+                **_box_bounds(box),
+            })
 
     return lines
 
@@ -170,6 +208,90 @@ def ocr_lines_to_rows(lines: List[Dict[str, Any]]) -> List[List[str]]:
     return rows
 
 
+def _merge_line_bounds(lines: List[Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    bounded = [line for line in lines if line.get("x0") is not None]
+    if not bounded:
+        return {"x0": None, "top": None, "x1": None, "bottom": None}
+    return {
+        "x0": min(float(line["x0"]) for line in bounded),
+        "top": min(float(line["top"]) for line in bounded),
+        "x1": max(float(line["x1"]) for line in bounded),
+        "bottom": max(float(line["bottom"]) for line in bounded),
+    }
+
+
+def ocr_lines_to_debug_page(
+    lines: List[Dict[str, Any]],
+    *,
+    page_number: int,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> Dict[str, Any]:
+    if not lines:
+        return {
+            "page_number": page_number,
+            "width": width,
+            "height": height,
+            "word_count": 0,
+            "words": [],
+            "rows": [],
+        }
+
+    sorted_lines = sorted(lines, key=lambda item: (item["y"], item["x"]))
+    median_height = float(np.median([line["h"] for line in sorted_lines]))
+    y_tolerance = max(8.0, median_height * 0.65)
+
+    grouped: List[List[Dict[str, Any]]] = []
+    for line in sorted_lines:
+        if not grouped or abs(grouped[-1][0]["y"] - line["y"]) > y_tolerance:
+            grouped.append([line])
+        else:
+            grouped[-1].append(line)
+
+    debug_rows: List[Dict[str, Any]] = []
+    for row_index, group in enumerate(grouped):
+        group = sorted(group, key=lambda item: item["x"])
+        cells = []
+        for cell_index, item in enumerate(group):
+            cells.append({
+                "cell_index": cell_index,
+                "text": item["text"].strip(),
+                "confidence": item.get("score"),
+                "x0": item.get("x0"),
+                "top": item.get("top"),
+                "x1": item.get("x1"),
+                "bottom": item.get("bottom"),
+            })
+        debug_rows.append({
+            "row_index": row_index,
+            "text": " | ".join(cell["text"] for cell in cells if cell["text"]),
+            "cells": cells,
+            **_merge_line_bounds(group),
+        })
+
+    debug_words = [
+        {
+            "word_index": idx,
+            "text": line["text"],
+            "confidence": line.get("score"),
+            "x0": line.get("x0"),
+            "top": line.get("top"),
+            "x1": line.get("x1"),
+            "bottom": line.get("bottom"),
+        }
+        for idx, line in enumerate(sorted_lines)
+    ]
+
+    return {
+        "page_number": page_number,
+        "width": width,
+        "height": height,
+        "word_count": len(debug_words),
+        "words": debug_words,
+        "rows": debug_rows,
+    }
+
+
 def _align_group_to_header(
     group: List[Dict[str, Any]], header_anchors: List[Tuple[str, float]]
 ) -> List[str]:
@@ -204,3 +326,37 @@ def extract_ocr_rows(image: np.ndarray) -> List[List[str]]:
     except Exception as e:
         LOGGER.error(f"Failed to extract OCR rows: {e}")
         return []
+
+
+def extract_ocr_rows_with_debug(
+    image: np.ndarray,
+    *,
+    page_number: int,
+) -> Tuple[List[List[str]], Dict[str, Any]]:
+    try:
+        ocr = _get_paddle_ocr()
+        if hasattr(ocr, "predict"):
+            result = ocr.predict(image)
+        else:
+            result = ocr.ocr(image, cls=False)
+        lines = _normalize_ocr_lines(result)
+        rows = ocr_lines_to_rows(lines)
+        height, width = image.shape[:2]
+        debug_page = ocr_lines_to_debug_page(
+            lines,
+            page_number=page_number,
+            width=int(width),
+            height=int(height),
+        )
+        return rows, debug_page
+    except Exception as e:
+        LOGGER.error(f"Failed to extract OCR rows: {e}")
+        return [], {
+            "page_number": page_number,
+            "width": None,
+            "height": None,
+            "word_count": 0,
+            "words": [],
+            "rows": [],
+            "error": str(e),
+        }

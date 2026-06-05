@@ -10,7 +10,10 @@ from app.models.schemas import StatementResult, Transaction
 from app.services.altered_statement_detector import detect_altered_statement
 from app.services.amount_utils import clean_amount
 from app.services.date_utils import parse_date
-from app.services.digital_extractor import extract_with_pdfplumber
+from app.services.digital_extractor import (
+    compile_digital_extraction_debug,
+    extract_with_pdfplumber,
+)
 from app.services.file_service import write_file
 from app.services.hash_service import (
     generate_content_hash,
@@ -18,13 +21,14 @@ from app.services.hash_service import (
 )
 from app.services.image_preprocessor import preprocess_scanned_pdf
 from app.services.metadata_extractor import extract_statement_metadata
-from app.services.ocr_extractor import extract_ocr_rows
+from app.services.ocr_extractor import extract_ocr_rows_with_debug
 from app.services.pdf_type_detector import detect_pdf_type
 from app.services.table_parser import (
     detect_balance_column_from_data,
     detect_header_row,
     map_columns,
     merge_wrapped_rows,
+    normalize_header_row,
 )
 from app.services.postprocessor import (
     calculate_confidence,
@@ -37,6 +41,36 @@ from app.services.postprocessor import (
 from app.services.statement_templates import select_statement_template
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _add_reconciliation_warnings(
+    transactions: List[Transaction],
+    warnings: List[str],
+) -> None:
+    checks = 0
+    failures = 0
+    both_sides = 0
+
+    for prev, curr in zip(transactions, transactions[1:]):
+        if curr.debit is not None and curr.credit is not None:
+            both_sides += 1
+        if prev.balance is None or curr.balance is None:
+            continue
+        amount_delta = float(curr.credit or 0) - float(curr.debit or 0)
+        expected = round(float(prev.balance) + amount_delta, 2)
+        actual = round(float(curr.balance), 2)
+        checks += 1
+        if abs(expected - actual) > 0.05:
+            failures += 1
+
+    if both_sides:
+        warnings.append(
+            f"Validation warning: {both_sides} transaction(s) have both debit and credit values."
+        )
+    if checks >= 3 and failures / checks > 0.25:
+        warnings.append(
+            f"Validation warning: balance reconciliation failed for {failures}/{checks} adjacent rows."
+        )
 
 
 def _statement_result(
@@ -63,8 +97,10 @@ def _statement_result(
     alteration_signals: Optional[Dict] = None,
     rejected: bool = False,
     rejection_reason: Optional[str] = None,
+    debug_extraction: Optional[Dict] = None,
 ) -> StatementResult:
     transactions = deduplicate_transactions(transactions)
+    _add_reconciliation_warnings(transactions, warnings)
     totals = sum_transaction_totals(transactions)
     meta = extract_statement_metadata(rows, transactions, header_idx=header_idx)
     return StatementResult(
@@ -74,6 +110,7 @@ def _statement_result(
         pdf_type=pdf_type or "unknown",
         warnings=warnings,
         raw_text=raw_text,
+        debug_extraction=debug_extraction or {},
         bank_name=meta["bank_name"],
         account_number=meta["account_number"],
         customer_number=meta["customer_number"],
@@ -103,7 +140,7 @@ def _split_date_from_cell(
     statement_year: Optional[int] = None,
 ) -> Tuple[Optional[str], str]:
     cell = cell.strip()
-    m = re.match(r'^(\d{1,2}/\d{1,2}(?:/\d{2,4})?)\b\s*(.*)', cell)
+    m = re.match(r'^(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b\s*(.*)', cell)
     if m:
         date_str = parse_date(m.group(1), statement_year=statement_year)
         if date_str:
@@ -241,8 +278,18 @@ def _parse_multicolumn_rows(
         debit: Optional[float] = None
         credit: Optional[float] = None
 
+        raw_amount = ""
         if amount_col is not None and amount_col < len(row):
             raw_amount = str(row[amount_col])
+            if clean_amount(raw_amount) is None:
+                numeric_cells = [
+                    (idx, str(cell))
+                    for idx, cell in enumerate(row)
+                    if idx != balance_col and clean_amount(str(cell)) is not None
+                ]
+                if numeric_cells:
+                    raw_amount = numeric_cells[-1][1]
+        if raw_amount:
             row_text = ' '.join(str(c) for c in row)
             debit, credit = classify_signed_amount(raw_amount, row_text)
         else:
@@ -292,6 +339,242 @@ def _detect_format(col_map: Dict, rows: List[List[str]], header_idx: int) -> str
     return "standard"
 
 
+def _row_text(row: List[str]) -> str:
+    return " ".join(str(c) for c in row if str(c).strip()).strip()
+
+
+def _is_money_cell(value: str) -> bool:
+    text = str(value).strip()
+    return bool(
+        re.search(r"\(?\$?\s*\d[\d,]*\.\d{2}-?\)?", text)
+        or re.search(r"\(?\$?\s*\d{1,3}(?:,\d{3})+-?\)?", text)
+    )
+
+
+def _extract_money_values(value: str) -> List[float]:
+    values: List[float] = []
+    pattern = re.compile(r"[+-]?\(?\$?\s*\d[\d,]*\.\d{2}-?\)?")
+    for match in pattern.finditer(str(value)):
+        amount = clean_amount(match.group(0))
+        if amount is not None:
+            values.append(amount)
+    return values
+
+
+def _is_repeated_block_layout(rows: List[List[str]]) -> bool:
+    text = "\n".join(_row_text(row).lower() for row in rows[:120])
+    if "jpmorgan chase" in text or "chase.com" in text:
+        return True
+    header_hits = len(re.findall(r"\bdate\b.{0,30}\bdescription\b.{0,30}\bamount\b", text))
+    return header_hits >= 2
+
+
+def _is_sectioned_activity_layout(rows: List[List[str]]) -> bool:
+    text = "\n".join(_row_text(row).lower() for row in rows[:120])
+    return (
+        "bank of america" in text
+        or "business advantage" in text
+        or (
+            "deposits and other credits" in text
+            and "withdrawals and other debits" in text
+        )
+    )
+
+
+def _description_from_cells(
+    cells: List[str],
+    *,
+    statement_year: Optional[int] = None,
+) -> str:
+    parts = []
+    for cell in cells:
+        value = str(cell).strip()
+        if not value:
+            continue
+        if parse_date(value, statement_year=statement_year):
+            continue
+        if clean_amount(value) is not None:
+            continue
+        parts.append(value)
+    return " ".join(parts).strip()
+
+
+def _classify_amount_by_context(
+    amount: float,
+    text: str,
+    section: Optional[str] = None,
+) -> Tuple[Optional[float], Optional[float]]:
+    upper = text.upper()
+    if amount < 0:
+        return abs(amount), None
+    if section == "credit":
+        return None, abs(amount)
+    if section == "debit":
+        return abs(amount), None
+    compact = re.sub(r"\s+", "", upper)
+    if "ATM" in upper or re.search(
+        r"\b(WITHDRAWAL|DEBIT|CHECK|FEE|PAYMENT|PURCHASE|TRANSFER TO|PAID OUT|ACH DEBIT)\b",
+        upper,
+    ) or re.search(
+        r"(WITHDRAWAL|DEBIT|PAYMENT|PURCHASE|CHECK)",
+        compact,
+    ):
+        return abs(amount), None
+    if re.search(
+        r"\b(DEPOSIT|CREDIT|TRANSFER FROM|PAID IN|ACH CREDIT|INTEREST|REFUND)\b",
+        upper,
+    ):
+        return None, abs(amount)
+    return None, abs(amount)
+
+
+def _parse_repeated_horizontal_blocks(
+    rows: List[List[str]],
+    *,
+    statement_year: Optional[int] = None,
+) -> List[Transaction]:
+    """
+    Parse layouts that repeat Date/Description/Amount blocks horizontally.
+    Chase statements often use this compact multi-block table shape.
+    """
+    transactions: List[Transaction] = []
+
+    for row in rows:
+        if not row:
+            continue
+        normalized_header = " ".join(normalize_header_row(row)).lower()
+        if "date" in normalized_header and "amount" in normalized_header:
+            continue
+
+        date_positions: List[Tuple[int, str]] = []
+        for idx, cell in enumerate(row):
+            date_value = parse_date(str(cell), statement_year=statement_year)
+            if not date_value:
+                date_value, _ = _split_date_from_cell(
+                    str(cell), statement_year=statement_year
+                )
+            if date_value:
+                date_positions.append((idx, date_value))
+
+        if not date_positions:
+            continue
+
+        for pos_idx, (date_idx, date_value) in enumerate(date_positions):
+            next_date_idx = (
+                date_positions[pos_idx + 1][0]
+                if pos_idx + 1 < len(date_positions)
+                else len(row)
+            )
+            block = [str(c).strip() for c in row[date_idx:next_date_idx]]
+            amount_candidates = [
+                (idx, clean_amount(cell))
+                for idx, cell in enumerate(block)
+                if _is_money_cell(cell) and clean_amount(cell) is not None
+            ]
+            if not amount_candidates:
+                continue
+            amount_idx, amount = amount_candidates[-1]
+            if amount is None:
+                continue
+
+            desc_cells = block[:amount_idx]
+            date_from_first, leftover = _split_date_from_cell(
+                desc_cells[0] if desc_cells else "", statement_year=statement_year
+            )
+            if date_from_first and leftover:
+                desc_cells[0] = leftover
+            description = _description_from_cells(
+                desc_cells, statement_year=statement_year
+            )
+            if not description:
+                description = _row_text(block)
+
+            debit, credit = _classify_amount_by_context(amount, _row_text(block))
+            transactions.append(Transaction(
+                date=date_value,
+                description=description,
+                debit=debit,
+                credit=credit,
+                balance=None,
+            ))
+
+    return transactions
+
+
+def _parse_sectioned_activity_rows(
+    rows: List[List[str]],
+    *,
+    statement_year: Optional[int] = None,
+) -> List[Transaction]:
+    """
+    Parse sectioned statements where table meaning comes from headings:
+    Deposits/Credits are credits; Withdrawals/Checks/Fees are debits.
+    """
+    transactions: List[Transaction] = []
+    section: Optional[str] = None
+
+    for row in rows:
+        row_text = _row_text(row)
+        row_lower = row_text.lower()
+        if not row_text:
+            continue
+
+        if re.search(r"\b(deposits?|credits?|additions?)\b", row_lower):
+            section = "credit"
+            if not re.search(r"\b\d{1,2}[/-]\d{1,2}\b", row_lower):
+                continue
+        elif re.search(r"\b(withdrawals?|debits?|checks?|fees?)\b", row_lower):
+            section = "debit"
+            if not re.search(r"\b\d{1,2}[/-]\d{1,2}\b", row_lower):
+                continue
+        elif re.search(r"\b(daily balance|summary|ending balance|service fees?)\b", row_lower):
+            if "fee" not in row_lower:
+                section = None
+            continue
+
+        date_value: Optional[str] = None
+        date_cell_idx = 0
+        leftover = ""
+        for idx, cell in enumerate(row):
+            date_value = parse_date(str(cell), statement_year=statement_year)
+            if not date_value:
+                date_value, leftover = _split_date_from_cell(
+                    str(cell), statement_year=statement_year
+                )
+            if date_value:
+                date_cell_idx = idx
+                break
+        if not date_value:
+            continue
+
+        amount_candidates = []
+        for idx, cell in enumerate(row):
+            amount = clean_amount(str(cell))
+            if _is_money_cell(str(cell)) and amount is not None:
+                amount_candidates.append((idx, amount))
+        if not amount_candidates:
+            continue
+
+        amount_idx, amount = amount_candidates[-1]
+        desc_cells = [str(c).strip() for c in row[date_cell_idx:amount_idx]]
+        if desc_cells and leftover:
+            desc_cells[0] = leftover
+        description = _description_from_cells(desc_cells, statement_year=statement_year)
+        if not description:
+            description = row_text
+
+        debit, credit = _classify_amount_by_context(amount, row_text, section)
+        transactions.append(Transaction(
+            date=date_value,
+            description=description,
+            debit=debit,
+            credit=credit,
+            balance=None,
+        ))
+
+    return transactions
+
+
 def process_single_statement(file_path: Path) -> StatementResult:
     warnings: List[str] = []
     alteration = detect_altered_statement(file_path)
@@ -332,10 +615,12 @@ def process_single_statement(file_path: Path) -> StatementResult:
 
     LOGGER.info(f"[{file_path.name}] type={pdf_type}")
     rows: List[List[str]] = []
+    debug_extraction: Dict = {}
 
     if pdf_type == "digital":
         try:
             rows = extract_with_pdfplumber(file_path)
+            debug_extraction = compile_digital_extraction_debug(file_path)
             LOGGER.info(f"[{file_path.name}] pdfplumber → {len(rows)} rows")
         except Exception as e:
             LOGGER.error(f"pdfplumber failed: {e}")
@@ -345,10 +630,25 @@ def process_single_statement(file_path: Path) -> StatementResult:
     if pdf_type == "scanned" or not rows:
         try:
             images = preprocess_scanned_pdf(file_path, dpi=200)
-            for img in images:
-                ocr_rows = extract_ocr_rows(img)
+            debug_pages = []
+            for page_number, img in enumerate(images, start=1):
+                ocr_rows, debug_page = extract_ocr_rows_with_debug(
+                    img,
+                    page_number=page_number,
+                )
+                debug_pages.append(debug_page)
                 if ocr_rows:
                     rows.extend(ocr_rows)
+            debug_extraction = {
+                "source": "paddleocr",
+                "coordinate_system": "image_pixels_top_left",
+                "pages": debug_pages,
+                "page_count": len(debug_pages),
+                "row_count": sum(len(page["rows"]) for page in debug_pages),
+                "cell_count": sum(
+                    len(row["cells"]) for page in debug_pages for row in page["rows"]
+                ),
+            }
             LOGGER.info(f"[{file_path.name}] OCR → {len(rows)} rows")
         except Exception as e:
             LOGGER.error(f"OCR failed: {e}")
@@ -380,6 +680,58 @@ def process_single_statement(file_path: Path) -> StatementResult:
             template.template_id,
             template.layout_family,
             template.parser_format,
+        )
+
+    repeated_transactions: List[Transaction] = []
+    if (template and template.parser_format == "repeated_blocks") or (
+        template is None and _is_repeated_block_layout(rows)
+    ):
+        repeated_transactions = _parse_repeated_horizontal_blocks(
+            rows, statement_year=stmt_year
+        )
+    if repeated_transactions:
+        confidence = calculate_confidence([t.dict() for t in repeated_transactions])
+        raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
+        LOGGER.info(
+            "[%s] repeated_blocks -> %d transactions",
+            file_path.name,
+            len(repeated_transactions),
+        )
+        return _statement_result(
+            filename=file_path.name,
+            transactions=repeated_transactions,
+            confidence=confidence,
+            pdf_type=pdf_type,
+            warnings=warnings,
+            rows=rows,
+            raw_text=raw_text,
+            header_idx=detect_header_row(rows),
+        )
+
+    sectioned_transactions: List[Transaction] = []
+    if (template and template.parser_format == "sectioned") or (
+        template is None and _is_sectioned_activity_layout(rows)
+    ):
+        sectioned_transactions = _parse_sectioned_activity_rows(
+            rows, statement_year=stmt_year
+        )
+    if sectioned_transactions:
+        confidence = calculate_confidence([t.dict() for t in sectioned_transactions])
+        raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
+        LOGGER.info(
+            "[%s] sectioned -> %d transactions",
+            file_path.name,
+            len(sectioned_transactions),
+        )
+        return _statement_result(
+            filename=file_path.name,
+            transactions=sectioned_transactions,
+            confidence=confidence,
+            pdf_type=pdf_type,
+            warnings=warnings,
+            rows=rows,
+            raw_text=raw_text,
+            header_idx=detect_header_row(rows),
         )
 
     add_sub_transactions: List[Transaction] = []
@@ -513,10 +865,24 @@ def process_single_statement(file_path: Path) -> StatementResult:
             row, col_map, balance_col=col_map.get('balance')
         )
 
+        compact_balance: Optional[float] = None
+        if debit is None and credit is None and 'amount' in col_map:
+            amount_idx = col_map['amount']
+            if amount_idx < len(row):
+                money_values = _extract_money_values(str(row[amount_idx]))
+                if money_values:
+                    debit, credit = _classify_amount_by_context(
+                        money_values[0], " ".join(str(c) for c in row)
+                    )
+                    if len(money_values) > 1:
+                        compact_balance = abs(money_values[1])
+
         if debit is None and credit is None:
             continue
 
         balance: Optional[float] = None
+        if compact_balance is not None:
+            balance = compact_balance
         if 'balance' in col_map and col_map['balance'] < len(row):
             balance = clean_amount(str(row[col_map['balance']]))
             if balance is not None:

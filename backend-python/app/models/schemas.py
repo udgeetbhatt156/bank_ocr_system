@@ -23,6 +23,7 @@ class StatementResult(BaseModel):
     pdf_type: str  # "digital" or "scanned"
     warnings: List[str] = []
     raw_text: Optional[str] = None
+    debug_extraction: Dict[str, Any] = Field(default_factory=dict)
     bank_name: Optional[str] = None
     account_number: Optional[str] = None
     customer_number: Optional[str] = None

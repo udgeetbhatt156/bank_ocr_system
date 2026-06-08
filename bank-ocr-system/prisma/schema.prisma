@@ -58,6 +58,7 @@ model Statement {
   @@index([fileName])
   @@index([fileHash])
   @@index([contentHash])
+  @@unique([accountId, fileHash])
 }
 
 model Transaction {

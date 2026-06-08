@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import path from "path";
 import { promises as fs } from "fs";
 import type { Prisma } from "@prisma/client";
@@ -223,13 +224,43 @@ export type PersistOcrResult = {
   duplicateOf?: string;
 };
 
+/**
+ * Compute SHA-256 file hash from a raw buffer.
+ * Used for early duplicate detection before expensive OCR processing.
+ */
+export function computeFileHash(buffer: Buffer): string {
+  return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
 export async function persistOcrDocument(
   userId: string,
   doc: OcrDocumentPayload,
   fileBuffer: Buffer
 ): Promise<PersistOcrResult> {
-  // Duplicate checks disabled - all uploads are now saved
-  
+  // ── Step 1: Compute fileHash from buffer (authoritative, ignores filename) ──
+  const fileHash = computeFileHash(fileBuffer);
+
+  // ── Step 2: Check for exact file duplicate (same binary, possibly renamed) ──
+  const existingByFileHash = await prisma.statement.findFirst({
+    where: {
+      fileHash,
+      account: { userId },
+    },
+    select: { id: true, fileName: true },
+  });
+
+  if (existingByFileHash) {
+    console.log(
+      `[Duplicate] File hash match: "${doc.filename}" is identical to "${existingByFileHash.fileName}"`
+    );
+    return {
+      statementId: existingByFileHash.id,
+      skippedDuplicate: true,
+      duplicateOf: existingByFileHash.fileName,
+    };
+  }
+
+  // ── Step 3: Resolve / create bank account ──
   const accountNumber =
     doc.account_number?.trim() || `account-${userId.slice(0, 8)}`;
   const bankName = doc.bank_name?.trim() || "Unknown Bank";
@@ -251,7 +282,31 @@ export async function persistOcrDocument(
         },
       });
 
-  // Re-upload with same filename updates the existing record instead of creating a new one
+  // ── Step 4: Check for content hash duplicate (same extracted data, different PDF) ──
+  const contentHash = doc.content_hash || null;
+
+  if (contentHash) {
+    const existingByContentHash = await prisma.statement.findFirst({
+      where: {
+        contentHash,
+        account: { userId },
+      },
+      select: { id: true, fileName: true },
+    });
+
+    if (existingByContentHash) {
+      console.log(
+        `[Duplicate] Content hash match: "${doc.filename}" has identical transaction data to "${existingByContentHash.fileName}"`
+      );
+      return {
+        statementId: existingByContentHash.id,
+        skippedDuplicate: true,
+        duplicateOf: existingByContentHash.fileName,
+      };
+    }
+  }
+
+  // ── Step 5: Re-upload with same filename updates the existing record ──
   const existing = await prisma.statement.findFirst({
     where: {
       fileName: doc.filename,
@@ -262,8 +317,8 @@ export async function persistOcrDocument(
 
   const statementFields = {
     fileName: doc.filename,
-    fileHash: doc.file_hash || null,
-    contentHash: doc.content_hash || null,
+    fileHash,
+    contentHash,
     confidence: doc.confidence ?? null,
     pdfType: doc.pdf_type ?? null,
     bankName: doc.bank_name?.trim() || null,

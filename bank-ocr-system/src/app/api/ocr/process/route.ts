@@ -6,7 +6,7 @@ import FormData from "form-data";
 import { NextResponse } from "next/server";
 
 import { requireAuthUser } from "@/lib/auth-server";
-import { persistOcrDocument, statementToDocumentResult } from "@/lib/statements";
+import { persistOcrDocument, computeFileHash, statementToDocumentResult } from "@/lib/statements";
 import { prisma } from "@/lib/prisma";
 import type { OcrDocumentPayload } from "@/lib/statements";
 
@@ -59,18 +59,52 @@ export async function POST(request: Request) {
   const upstreamForm = new FormData();
 
   try {
+    // ── Early file-hash duplicate check (before calling Python OCR) ──
+    const earlySkipped: string[] = [];
+
     for (const file of files) {
       if (!(file instanceof File)) continue;
       const fileName = file.name || `document-${Date.now()}.bin`;
       const buffer = Buffer.from(await file.arrayBuffer());
+
+      // Compute SHA-256 hash from raw bytes for duplicate detection
+      const fileHash = computeFileHash(buffer);
+
+      // Check if this exact file already exists in the user's statements
+      const existingByHash = await prisma.statement.findFirst({
+        where: {
+          fileHash,
+          account: { userId: user.id },
+        },
+        select: { fileName: true },
+      });
+
+      if (existingByHash) {
+        earlySkipped.push(
+          `${fileName}: identical file already uploaded as "${existingByHash.fileName}"`
+        );
+        continue; // Skip this file entirely — don't send to OCR
+      }
+
       fileBuffers.push({ name: fileName, buffer });
       const filePath = await writeTempFile(fileName, buffer);
       tempPaths.push(filePath);
       upstreamForm.append("files", fs.createReadStream(filePath), fileName);
     }
 
+    // If all files were early-skipped as duplicates, return immediately
+    if (!fileBuffers.length) {
+      return NextResponse.json({
+        status: "success",
+        documents: [],
+        warnings: earlySkipped,
+        skippedDuplicates: earlySkipped,
+      });
+    }
+
+    // Call Python OCR with duplicate-check endpoint (returns file_hash + content_hash)
     const response = await axios.post(
-      `${PYTHON_OCR_URL}/api/ocr/process`,
+      `${PYTHON_OCR_URL}/api/ocr/process-with-duplicate-check`,
       upstreamForm,
       {
         headers: upstreamForm.getHeaders(),
@@ -85,7 +119,7 @@ export async function POST(request: Request) {
 
     const savedDocuments = [];
     const persistErrors: string[] = [];
-    const skippedDuplicates: string[] = [];
+    const skippedDuplicates: string[] = [...earlySkipped];
     const rejectedStatements: string[] = [];
 
     for (let i = 0; i < ocrData.documents.length; i++) {

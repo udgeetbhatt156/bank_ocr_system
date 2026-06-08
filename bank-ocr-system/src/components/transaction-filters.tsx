@@ -16,8 +16,11 @@ interface TransactionFiltersProps {
   typeFilter: string;
   onTypeFilterChange: (value: string) => void;
   sourceFilter: string;
+  onBankTypeFilterChange: (value: string) => void;
+  bankTypeFilter: string;
   onSourceFilterChange: (value: string) => void;
   sources: string[];
+
 }
 
 export function TransactionFilters({
@@ -25,6 +28,8 @@ export function TransactionFilters({
   onSearchChange,
   typeFilter,
   onTypeFilterChange,
+  bankTypeFilter,
+  onBankTypeFilterChange,
   sourceFilter,
   onSourceFilterChange,
   sources,
@@ -54,7 +59,7 @@ export function TransactionFilters({
           <SelectItem value="debit">Debits Only</SelectItem>
         </SelectContent>
       </Select>
-
+   
       {/* Source filter */}
       {/* onValueChange={onSourceFilterChange} */}
       {sources.length > 1 && (

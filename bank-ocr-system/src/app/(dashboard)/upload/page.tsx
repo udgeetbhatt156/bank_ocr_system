@@ -10,6 +10,7 @@ import { StatementPreview } from "@/components/statement-preview";
 import { Button } from "@/components/ui/button";
 import { AccuracyBadge } from "@/components/accuracy-badge";
 import { Loader2, Rocket, Trash2, ArrowRight } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function UploadPage() {
   const { files, isProcessing, processFiles, clearFiles, clearResults, documents } =
@@ -101,6 +102,7 @@ export default function UploadPage() {
             Clear All
           </Button>
 
+
           <div className="flex items-center gap-3">
             {hasResults && (
               <Button
@@ -112,6 +114,21 @@ export default function UploadPage() {
                 View Transactions <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             )}
+            <div>
+            
+        <Select>
+        <SelectTrigger id="bank-type-filter" className="w-[140px] h-9">
+          <SelectValue placeholder="All Bank Types" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Bank Types</SelectItem>
+          <SelectItem value="bank-of-america">Bank Of America</SelectItem>
+          <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
+         <SelectItem value="bank-of-america">Bank Of America</SelectItem>
+          <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
+        </SelectContent>
+        </Select>
+            </div>
             <Button
               onClick={handleProcess}
               disabled={isProcessing || pendingCount === 0}

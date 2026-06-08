@@ -23,9 +23,7 @@ import { AccuracyBadge } from "@/components/accuracy-badge";
 import { cn } from "@/lib/utils";
 import { formatUSD } from "@/lib/currency";
 
-/* ═══════════════════════════════════════════
-   SCAN OVERLAY — animated laser line
-   ═══════════════════════════════════════════ */
+/* SCAN OVERLAY — animated laser line */
 function ScanOverlay() {
   return (
     <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-xl">
@@ -69,9 +67,7 @@ function ScanOverlay() {
   );
 }
 
-/* ═══════════════════════════════════════════
-   EXTRACTED DATA PANEL
-   ═══════════════════════════════════════════ */
+/* EXTRACTED DATA PANEL */
 function ExtractedDataPanel({ doc }: { doc: DocumentResult }) {
   const txns = doc.transactions;
   const totalCredits = txns.reduce((sum, t) => sum + Number(t.credit || 0), 0);

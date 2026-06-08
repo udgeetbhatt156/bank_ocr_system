@@ -56,7 +56,7 @@ TEMPLATES: List[StatementTemplate] = [
             "perry systems",
             "chase total checking",
         ],
-        header_keywords=["date", "description", "amount"],
+        header_keywords=["date", "description", "amount","Account Number."],
         amount_rules={
             "section_context": True,
             "negative_is_debit": True,
@@ -152,7 +152,7 @@ TEMPLATES: List[StatementTemplate] = [
         header_keywords=[
             "date",
             "check",
-            "tran code",
+            "trancode",
             "description",
             "amount",
             "balance",

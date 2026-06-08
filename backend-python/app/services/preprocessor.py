@@ -42,12 +42,6 @@ def deskew_image(image: np.ndarray) -> np.ndarray:
 
 
 def remove_borders(image: np.ndarray, border_pct: float = 0.01) -> np.ndarray:
-    """
-    Remove black borders from scanned pages.
-
-    Many scanners add a thin black border or shadow. This crops it off
-    using a percentage of the image dimensions.
-    """
     h, w = image.shape[:2]
     top = int(h * border_pct)
     bottom = h - int(h * border_pct)
@@ -87,19 +81,6 @@ def assess_image_quality(image: np.ndarray) -> dict:
 
 
 def denoise_image(image: np.ndarray) -> np.ndarray:
-    """
-    Apply optimized bilateral filter for denoising.
-    
-    PERFORMANCE OPTIMIZATION:
-    - Reduced filter diameter from 9 to 5 (faster)
-    - Bilateral filtering preserves edges while removing noise
-    
-    Args:
-        image: Input image (color or grayscale)
-        
-    Returns:
-        Denoised image
-    """
     # Optimized: Smaller filter diameter for faster processing
     if len(image.shape) == 3:
         return cv2.bilateralFilter(image, d=5, sigmaColor=50, sigmaSpace=50)
@@ -122,16 +103,6 @@ def apply_clahe(image: np.ndarray) -> np.ndarray:
 
 
 def apply_sauvola_threshold(image: np.ndarray, window_size: int = 25) -> np.ndarray:
-    """
-    Apply Sauvola binarization - better for faded/uneven lighting.
-
-    Args:
-        image: Grayscale image
-        window_size: Local window size for threshold calculation
-
-    Returns:
-        Binary image
-    """
     if len(image.shape) == 3:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
@@ -141,11 +112,6 @@ def apply_sauvola_threshold(image: np.ndarray, window_size: int = 25) -> np.ndar
 
 
 def remove_scan_artifacts(image: np.ndarray) -> np.ndarray:
-    """
-    Remove small noise dots and thin lines that are common in scanned documents.
-
-    Uses morphological opening to remove tiny artifacts without affecting text.
-    """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
 
     # Remove very small dots (noise from scanner)

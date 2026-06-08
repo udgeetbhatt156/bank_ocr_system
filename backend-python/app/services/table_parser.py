@@ -37,6 +37,7 @@ COLUMN_PATTERNS = {
         r'\bactivity\b',
     ],
     'debit': [
+        r'\bwithdrawals?\s*/\s*debits?\b',
         r'\bwithdrawal\b',
         r'\bwithdrawals\b',
         r'\bsubtraction\b',
@@ -50,6 +51,7 @@ COLUMN_PATTERNS = {
         r'\bmoney\s*out\b',
     ],
     'credit': [
+        r'\bdeposits?\s*/\s*credits?\b',
         r'\bdeposit\b',
         r'\bdeposits\b',
         r'\baddition\b',
@@ -63,6 +65,7 @@ COLUMN_PATTERNS = {
         r'\bmoney\s*in\b',
     ],
     'balance': [
+        r'\bending\s+daily\s+balance\b',
         r'\bnew\s*balance\b',
         r'\bclosing\s*balance\b',
         r'\bavailable\s*balance\b',
@@ -75,6 +78,7 @@ COLUMN_PATTERNS = {
         r'\bcheck\s*[#]',
         r'\bcheck\s*(?:no|num|number|nmbr)\b',
         r'\bchk\s*(?:no|num|number|#)?\b',
+        r'\bcheck\s+number\b',
     ],
     'tran_code': [
         r'\btran\s*code\b',

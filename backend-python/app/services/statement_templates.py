@@ -25,39 +25,64 @@ class StatementTemplate:
 TEMPLATES: List[StatementTemplate] = [
     StatementTemplate(
         template_id="genreich_signed_amount_v1",
-        bank_name="Unknown",
+        bank_name="Navy Federal Credit Union",
         layout_family="single_signed_amount_with_running_balance",
         parser_format="signed_amount",
-        bank_patterns=["genreich", "statement of account", "business checking"],
+        bank_patterns=[
+            "genreich",
+            "statement of account",
+            "navyfederal.org",
+            "navy federal",
+        ],
         header_keywords=["date", "transaction detail", "amount", "balance"],
         amount_rules={
             "trailing_minus_is_debit": True,
             "positive_is_credit": True,
         },
-        sample_files=["GENREICH_FEBUARY_1_.pdf"],
+        stop_keywords=["items paid", "average daily balance"],
+        sample_files=[
+            "GENREICH_FEBUARY_1_.pdf",
+            "GENREICH_APRIL_1_.pdf",
+        ],
     ),
     StatementTemplate(
         template_id="chase_repeated_blocks_v1",
         bank_name="JPMorgan Chase",
         layout_family="repeated_horizontal_blocks",
         parser_format="repeated_blocks",
-        bank_patterns=["jpmorgan chase", "chase.com", "perry systems"],
+        bank_patterns=[
+            "jpmorgan chase",
+            "chase.com",
+            "perry systems",
+            "chase total checking",
+        ],
         header_keywords=["date", "description", "amount"],
         amount_rules={
             "section_context": True,
             "negative_is_debit": True,
         },
-        sample_files=["20260326173751_PERRY_SYSTEMS_LLC_FEB_.pdf"],
+        stop_keywords=["service fee", "overdraft"],
+        sample_files=[
+            "20260326173751_PERRY_SYSTEMS_LLC_FEB_.pdf",
+            "20260326173751_PERRY_SYSTEMS_LLC_jan.pdf",
+        ],
     ),
     StatementTemplate(
         template_id="bank_of_america_sectioned_v1",
         bank_name="Bank of America",
         layout_family="sectioned_deposits_withdrawals",
         parser_format="sectioned",
-        bank_patterns=["bank of america", "business advantage", "zason latino"],
+        bank_patterns=[
+            "bank of america",
+            "bankofamerica.com",
+            "business advantage",
+            "zason latino",
+            "bankcard 1250",
+        ],
         header_keywords=[
             "deposits and other credits",
             "withdrawals and other debits",
+            "checks",
             "date",
             "description",
             "amount",
@@ -66,7 +91,8 @@ TEMPLATES: List[StatementTemplate] = [
             "section_deposits_are_credit": True,
             "section_withdrawals_are_debit": True,
         },
-        sample_files=["april.pdf"],
+        stop_keywords=["daily balance", "service fees"],
+        sample_files=["april.pdf", "Jan.pdf"],
     ),
     StatementTemplate(
         template_id="sofi_digital_activity_v1",
@@ -141,25 +167,135 @@ TEMPLATES: List[StatementTemplate] = [
         template_id="bancfirst_sectioned_activity_v1",
         bank_name="BancFirst",
         layout_family="sectioned_deposits_withdrawals",
-        parser_format="heuristic",
-        bank_patterns=["bancfirst", "4452334719", "business essentials"],
+        parser_format="sectioned",
+        bank_patterns=[
+            "bancfirst",
+            "4452334719",
+            "business essentials",
+            "church ave",
+        ],
         header_keywords=[
             "beginning balance",
             "deposits",
             "withdrawals",
+            "card activity",
+            "other debits",
             "ending balance",
+            "activity description",
         ],
         amount_rules={
             "section_withdrawals_are_debit": True,
             "section_deposits_are_credit": True,
             "balance_delta_validation": True,
         },
-        stop_keywords=["daily balance", "ending balance"],
+        stop_keywords=["daily balance", "ending balance", "checks in number"],
         sample_files=[
             "4719-December-BancFirst.pdf",
             "4719-January-BancFirst.pdf",
         ],
     ),
+
+    # Citibank — split Debits / Credits columns with running balance
+    StatementTemplate(
+        template_id="citi_streamlined_checking_v1",
+        bank_name="Citibank",
+        layout_family="separate_debit_credit_with_balance",
+        parser_format="standard",
+        bank_patterns=[
+            "citibank",
+            "citibusiness",
+            "cbo services",
+            "streamlined checking",
+            "citi.com",
+        ],
+        header_keywords=[
+            "date",
+            "description",
+            "debits",
+            "credits",
+            "balance",
+        ],
+        amount_rules={
+            "debit_column_is_debit": True,
+            "credit_column_is_credit": True,
+        },
+        stop_keywords=[
+            "service charge summary",
+            "average daily collected balance",
+        ],
+        sample_files=[
+            "Citi_XLRM_LLC_Feb_28_to_March_26_2026.pdf",
+            "Citi_XLRM_LLC_Jan_27_to_Feb_27_2026.pdf",
+        ],
+    ),
+    # Wells Fargo — Check# / Credits / Debits / Ending Daily Balance
+    StatementTemplate(
+        template_id="wells_fargo_business_checking_v1",
+        bank_name="Wells Fargo",
+        layout_family="separate_debit_credit_with_daily_balance",
+        parser_format="standard",
+        bank_patterns=[
+            "wells fargo",
+            "wellsfargo.com",
+            "initiate business checking",
+            "botachic designs",
+        ],
+        header_keywords=[
+            "date",
+            "check number",
+            "description",
+            "deposits/credits",
+            "withdrawals/debits",
+            "ending daily balance",
+        ],
+        amount_rules={
+            "debit_column_is_debit": True,
+            "credit_column_is_credit": True,
+        },
+        stop_keywords=[
+            "totals",
+            "monthly service fee summary",
+            "account transaction fees",
+        ],
+        sample_files=["Feb_2026_Botachic_Designs_llc.pdf"],
+    ),
+    # Chase Total Checking — sectioned (Deposits / ATM & Debit /
+    #   Electronic / Fees) with per-section Date | Description | Amount
+    StatementTemplate(
+        template_id="chase_total_checking_sectioned_v1",
+        bank_name="JPMorgan Chase",
+        layout_family="sectioned_deposits_withdrawals",
+        parser_format="sectioned",
+        bank_patterns=[
+            "jpmorgan chase",
+            "chase.com",
+            "chase total checking",
+        ],
+        header_keywords=[
+            "Account Number",
+            "deposits and additions",
+            "atm & debit card withdrawals",
+            "electronic withdrawals",
+            "fees and other withdrawals",
+            "date",
+            "description",
+            "amount"
+        ],
+        amount_rules={
+            "section_deposits_are_credit": True,
+            "section_withdrawals_are_debit": True,
+        },
+        stop_keywords=[
+            "service fee",
+            "overdraft and returned item",
+            "total deposits",
+            "total atm",
+            "total electronic",
+            "total fees",
+        ],
+        sample_files=["20260326173751_PERRY_SYSTEMS_LLC_jan.pdf"],
+    ),
+    # Generic fallback templates
     StatementTemplate(
         template_id="generic_additions_subtractions_v1",
         bank_name="Unknown",

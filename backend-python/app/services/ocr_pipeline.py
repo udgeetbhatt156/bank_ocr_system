@@ -2,6 +2,7 @@ import logging
 import re
 import uuid
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from fastapi import UploadFile
@@ -856,6 +857,178 @@ def _parse_sofi_signed_type_rows(
 
     return transactions
 
+    return transactions
+
+
+# ── Citibank: fragmented multi-line with split Debits/Credits/Balance ────
+
+_CITI_CREDIT_TYPES = [
+    "FUNDS TRANSFER", "ELECTRONIC CREDIT", "ATM DEPOSIT",
+    "DEPOSIT", "RETURNED CHECK", "DEBIT CARD CREDI",
+]
+
+_CITI_DEBIT_TYPES = [
+    "ACH DEBIT", "DEBIT CARD PURCH", "DEBIT CARD (POS)",
+    "CBUSOL TRANSFER DEBIT", "SERVICE CHARGES", "SERVICE CHARGE",
+    "OFF-US ATM WITHDRAWAL", "INCOMING WIRE TRAN FEE",
+    "CHECK NO:", "NSF/OD/DAU CHARGE",
+]
+
+def _parse_citi_checking_rows(
+    rows: List[List[str]],
+    *,
+    statement_year: Optional[int] = None,
+) -> List[Transaction]:
+    """
+    Parse Citibank XLRM-style checking statements.
+    
+    Citibank layout rules:
+      1. Cells are heavily fragmented by pdfplumber.
+      2. Multi-line transactions with merchant/ref info on continuation rows.
+      3. Card reference lines (8-char) must be skipped.
+      4. Amounts are split into Debit/Credit columns but since cells are fragmented,
+         we extract them from the end of the reconstructed row string and 
+         classify direction based on the transaction TYPE in the description.
+    """
+    transactions: List[Transaction] = []
+    current_txn: Optional[Transaction] = None
+    in_transactions = False
+    
+    def flush():
+        nonlocal current_txn
+        if current_txn:
+            desc = current_txn.description.strip()
+            desc_upper = desc.upper()
+            
+            # Determine direction based on type prefix
+            is_credit = False
+            is_debit = False
+            
+            for t in _CITI_CREDIT_TYPES:
+                # Compare without internal spaces since pdfplumber fragments words
+                if desc_upper.replace(" ", "").startswith(t.replace(" ", "")):
+                    is_credit = True
+                    break
+            
+            if not is_credit:
+                for t in _CITI_DEBIT_TYPES:
+                    if desc_upper.replace(" ", "").startswith(t.replace(" ", "")):
+                        is_debit = True
+                        break
+            
+            # Fallback if prefix matching fails
+            if not is_credit and not is_debit:
+                if "DEPOSIT" in desc_upper or "CREDIT" in desc_upper:
+                    is_credit = True
+                else:
+                    is_debit = True
+                    
+            if is_credit and current_txn.debit is not None:
+                current_txn.credit = current_txn.debit
+                current_txn.debit = None
+                
+            # Special parsing rules
+            if current_txn.debit == 0.01 or current_txn.credit == 0.01:
+                if "ACCTVERIFY" not in desc_upper:
+                    desc += " [ACCTVERIFY]"
+                    
+            if "XLRM LLC" in desc_upper:
+                desc += " [INTRA-ENTITY]"
+                
+            current_txn.description = desc
+            transactions.append(current_txn)
+            current_txn = None
+
+    for row in rows:
+        clean_cells = [str(c).strip() for c in row if str(c).strip()]
+        if not clean_cells:
+            continue
+            
+        row_text = " ".join(clean_cells)
+        row_lower = row_text.lower()
+        
+        # Stop conditions
+        if "total debits/credits" in row_lower or "customer service information" in row_lower:
+            in_transactions = False
+            break
+            
+        # Start conditions
+        if "beginning bal" in row_lower or "date description" in row_lower or ("date" in row_lower and "debits" in row_lower and "credits" in row_lower) or ("checking activity" in row_lower and len(row_lower) < 20):
+            # Sometimes "date description" is fragmented, "checking activity" works well
+            in_transactions = True
+            continue
+            
+        if not in_transactions:
+            continue
+            
+        # Check for date match (MM/DD)
+        date_match = re.match(r'^(0[1-9]|1[0-2])/([0-3][0-9])', row_text)
+        if date_match:
+            flush()
+            month = int(date_match.group(1))
+            day = int(date_match.group(2))
+            
+            year = statement_year or datetime.now().year
+            try:
+                dt = datetime(year, month, day)
+                date_str = dt.strftime("%Y-%m-%d")
+            except ValueError:
+                date_str = f"{year}-{month:02d}-{day:02d}"
+                
+            # Extract amounts from the end
+            # We use a pattern that allows spaces anywhere to handle fragmentation (e.g. "22 4.74", "104. 00")
+            amounts_iter = list(re.finditer(r'(?:\d\s*){1,3}(?:,\s*(?:\d\s*){3})*\.\s*(?:\d\s*){2}', row_text))
+            
+            amt_val = None
+            bal_val = None
+            desc_end = len(row_text)
+            
+            if len(amounts_iter) >= 2:
+                # Two amounts: Amount and Balance
+                amt_val = clean_amount(re.sub(r'\s+', '', amounts_iter[-2].group()))
+                bal_val = clean_amount(re.sub(r'\s+', '', amounts_iter[-1].group()))
+                desc_end = amounts_iter[-2].start()
+            elif len(amounts_iter) == 1:
+                # One amount: Amount only (Balance missing/blank)
+                amt_val = clean_amount(re.sub(r'\s+', '', amounts_iter[0].group()))
+                desc_end = amounts_iter[0].start()
+                
+            desc = row_text[date_match.end():desc_end].strip()
+            
+            # Clean up fragmented known words
+            desc = desc.replace("DEB IT", "DEBIT").replace("PURC H", "PURCH").replace("ELE CTRONIC", "ELECTRONIC").replace("CRED IT", "CREDIT")
+            
+            current_txn = Transaction(
+                date=date_str,
+                description=desc,
+                debit=amt_val,
+                credit=None,
+                balance=bal_val,
+            )
+            
+        elif current_txn:
+            # Continuation line
+            
+            # Skip 8-character alphanumeric card ref codes that start the line
+            # Often followed by fragmented card number "006 05 4" and Month "Mar 05"
+            # Using a lenient regex to match the 8-char ref and anything that follows 
+            # if it looks like card ref residue.
+            if re.match(r'^[A-Z0-9]{8}(?:\s+0{2,3}\s*\d\s*\d\s*\d\s*\d)?', row_text):
+                continue
+                
+            # Skip pure garbage fragment lines that just contain the end of card (e.g. "006054")
+            if re.match(r'^0\s*0\s*\d\s*\d\s*\d\s*\d', row_text):
+                continue
+                
+            # If the transaction is a CHECK NO:, we shouldn't append continuation lines
+            if current_txn.description.upper().startswith("CHECK NO:"):
+                continue
+                
+            current_txn.description += " " + row_text
+
+    flush()
+    return transactions
+
 
 def process_single_statement(file_path: Path) -> StatementResult:
     warnings: List[str] = []
@@ -962,6 +1135,31 @@ def process_single_statement(file_path: Path) -> StatementResult:
             template.template_id,
             template.layout_family,
             template.parser_format,
+        )
+
+    # ── Citibank: fragmented multi-line ────────────────────────────────────
+    citi_transactions: List[Transaction] = []
+    if template and template.parser_format == "citi_checking":
+        citi_transactions = _parse_citi_checking_rows(
+            rows, statement_year=stmt_year
+        )
+    if citi_transactions:
+        confidence = calculate_confidence([t.dict() for t in citi_transactions])
+        raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
+        LOGGER.info(
+            "[%s] citi_checking -> %d transactions",
+            file_path.name,
+            len(citi_transactions),
+        )
+        return _statement_result(
+            filename=file_path.name,
+            transactions=citi_transactions,
+            confidence=confidence,
+            pdf_type=pdf_type,
+            warnings=warnings,
+            rows=rows,
+            raw_text=raw_text,
+            header_idx=detect_header_row(rows),
         )
 
     # ── SoFi Bank: signed amount with TYPE column ──────────────────────

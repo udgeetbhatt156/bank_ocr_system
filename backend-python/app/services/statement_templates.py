@@ -215,18 +215,23 @@ TEMPLATES: List[StatementTemplate] = [
         ],
     ),
 
-    # Citibank — split Debits / Credits columns with running balance
+    # Citibank — fragmented multi-line with split Debits/Credits/Balance
     StatementTemplate(
         template_id="citi_streamlined_checking_v1",
         bank_name="Citibank",
-        layout_family="separate_debit_credit_with_balance",
-        parser_format="standard",
+        layout_family="fragmented_multiline_debit_credit",
+        parser_format="citi_checking",
         bank_patterns=[
             "citibank",
             "citibusiness",
+            "citibusiness®",
             "cbo services",
             "streamlined checking",
             "citi.com",
+            "citigroup",
+            "xlrm",
+            "petochi",
+            "1884 collection",
         ],
         header_keywords=[
             "date",
@@ -238,14 +243,21 @@ TEMPLATES: List[StatementTemplate] = [
         amount_rules={
             "debit_column_is_debit": True,
             "credit_column_is_credit": True,
+            "multiline_transactions": True,
         },
         stop_keywords=[
             "service charge summary",
             "average daily collected balance",
+            "total debits/credits",
+            "customer service information",
+            "total charges for services",
+            "net service charge",
         ],
         sample_files=[
             "Citi_XLRM_LLC_Feb_28_to_March_26_2026.pdf",
             "Citi_XLRM_LLC_Jan_27_to_Feb_27_2026.pdf",
+            "Citi_XLRM_LLC_Dec_28_to_Jan_26_2026.pdf",
+            "Citi_XLRM_LLC_March_27_to_April_24_2026.pdf",
         ],
     ),
     # Wells Fargo — Check# / Credits / Debits / Ending Daily Balance

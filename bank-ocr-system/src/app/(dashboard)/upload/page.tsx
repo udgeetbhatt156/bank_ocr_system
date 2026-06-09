@@ -121,11 +121,16 @@ export default function UploadPage() {
           <SelectValue placeholder="All Bank Types" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All Bank Types</SelectItem>
+          <SelectItem value="all">Select Bank Type</SelectItem>
+          <SelectItem value="bancfirst">BancFirst</SelectItem>
+          <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
+          <SelectItem value="citibank">Citi Bank</SelectItem>
+          <SelectItem value="chase">JPMorgan Chase</SelectItem>
           <SelectItem value="bank-of-america">Bank Of America</SelectItem>
-          <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
-         <SelectItem value="bank-of-america">Bank Of America</SelectItem>
-          <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
+          <SelectItem value="sofi-bank">SoFi Bank</SelectItem>
+          <SelectItem value="navy-federal">Navy Federal Credit Union</SelectItem>
+          <SelectItem value="palmetto">Palmetto State Bank</SelectItem>
+          <SelectItem value="washington-trust">Washington Trust Bank</SelectItem>
         </SelectContent>
         </Select>
             </div>

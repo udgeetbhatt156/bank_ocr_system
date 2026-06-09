@@ -575,6 +575,288 @@ def _parse_sectioned_activity_rows(
     return transactions
 
 
+# ── SoFi Bank: signed amount with TYPE column ─────────────────────────────
+
+# Regex for single-cell SoFi rows (Jan/Feb format):
+# "Jan 31, 2026 Debit Card ARCO #42551 AMPM -$40.35 $95,744.25 Transaction ID: 586-1"
+# OR short-date variant:
+# "04/01 Direct Deposit Payroll Hansen LLC +2,500.00 $106,486.15"
+_SOFI_SINGLE_LINE_RE = re.compile(
+    r"^"
+    r"(?P<date>"
+    r"(?:[A-Za-z]{3}\s+\d{1,2}(?:,?\s+\d{4})?)"  # "Jan 31, 2026" or "Jan 31"
+    r"|(?:\d{1,2}/\d{1,2}(?:/\d{2,4})?)"           # "04/01" or "04/01/2026"
+    r")\s+"
+    r"(?P<type>Direct Deposit|Debit (?:Card|Purchase)|Bill Payment|Wire Transfer"
+    r"|ACH Transfer|Interest (?:Credit|Earned)|Check Deposit|Deposit"
+    r"|Direct Payment|Other)\s+"
+    r"(?P<desc>.+?)\s+"
+    r"(?P<amount>[+-]\$?[\d,]+\.?\d*)\s+"
+    r"\$?(?P<balance>[\d,]+\.?\d*)"
+    r"(?:\s+Transaction\s+ID:\s*\S+)?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+_SOFI_TRANSACTION_ID_RE = re.compile(
+    r"^\s*Transaction\s+ID:\s*\S+\s*$", re.IGNORECASE
+)
+
+_SOFI_SKIP_RE = re.compile(
+    r"opening\s+balance|interest\s+accrues\s+daily|sofi\s+insured|"
+    r"important\s+information|how\s+to\s+contact|deposit\s+agreement|"
+    r"sofi\s+checking\s+and\s+savings|page\s+\d|"
+    r"primary\s+account\s+holder|statement\s+period|member\s+since|"
+    r"current\s+balance|beginning\s+balance|current\s+interest\s+rate|"
+    r"annual\s+percentage|monthly\s+interest\s+(?:accrued|paid)|"
+    r"ytd\s+interest\s+paid|"
+    r"balances\s+below|transaction\s+details|"
+    r"checking\s+account\s+-\s*\d|^\s*sofi\s*$|"
+    r"w\.sofi\.com",
+    re.IGNORECASE,
+)
+
+
+def _parse_sofi_amount_balance(
+    raw: str,
+) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Split a SoFi amount+balance cell like "+2,500.00 $106,486.15" into
+    (signed_amount, balance).  Also handles plain signed amounts.
+    """
+    raw = raw.strip()
+
+    # Pattern: "+2,500.00 $106,486.15" or "-212.44 $108,073.71"
+    m = re.match(
+        r"([+-]\$?[\d,]+\.?\d*)\s+\$?([\d,]+\.?\d*)",
+        raw,
+    )
+    if m:
+        amount = clean_amount(m.group(1))
+        balance = clean_amount(m.group(2))
+        if balance is not None:
+            balance = abs(balance)
+        return amount, balance
+
+    # Plain signed amount
+    amount = clean_amount(raw)
+    return amount, None
+
+
+def _parse_sofi_signed_type_rows(
+    rows: List[List[str]],
+    *,
+    statement_year: Optional[int] = None,
+) -> List[Transaction]:
+    """
+    Parse SoFi Bank statements.
+
+    SoFi layout rules:
+      1. Single signed AMOUNT column: + for credits, − for debits
+      2. Explicit TYPE column: "Direct Deposit", "Debit Purchase", etc.
+      3. Transaction ID metadata lines must be skipped
+      4. Date is MM/DD (year inferred) or "Mon DD, YYYY"
+      5. No summary/total lines — totals computed from transactions
+    """
+    transactions: List[Transaction] = []
+    in_transaction_table = False
+
+    for row in rows:
+        if not row or not any(str(c).strip() for c in row):
+            continue
+
+        row_text = " ".join(str(c) for c in row).strip()
+        row_lower = row_text.lower()
+
+        # Detect the SoFi header row to start parsing
+        if "date" in row_lower and "type" in row_lower and "amount" in row_lower:
+            in_transaction_table = True
+            continue
+
+        # Skip Transaction ID metadata lines
+        if _SOFI_TRANSACTION_ID_RE.match(row_text):
+            continue
+
+        # Skip non-transaction content
+        if _SOFI_SKIP_RE.search(row_text):
+            # Re-enter transaction mode if we see a continued header
+            if "date" in row_lower and "type" in row_lower and "amount" in row_lower:
+                in_transaction_table = True
+            continue
+
+        if not in_transaction_table:
+            continue
+
+        # ─── Format A: Multi-cell rows ─────────────────────────────────
+        # ["04/01", "Direct Deposit", "Payroll Hansen LLC", "+2,500.00 $106,486.15"]
+        if len(row) >= 3:
+            date_str = parse_date(str(row[0]).strip(), statement_year=statement_year)
+            if date_str:
+                txn_type = str(row[1]).strip() if len(row) > 1 else ""
+                description = str(row[2]).strip() if len(row) > 2 else ""
+
+                # Build description: TYPE + narration
+                if txn_type and description:
+                    full_desc = f"{txn_type} {description}"
+                elif txn_type:
+                    full_desc = txn_type
+                else:
+                    full_desc = description or row_text
+
+                # Amount + balance: may be merged in one cell or separate
+                amount_val: Optional[float] = None
+                balance: Optional[float] = None
+
+                if len(row) >= 5:
+                    # Separate amount and balance cells
+                    amount_val = clean_amount(str(row[3]))
+                    balance = clean_amount(str(row[4]))
+                    if balance is not None:
+                        balance = abs(balance)
+                elif len(row) >= 4:
+                    # Merged amount+balance cell
+                    amount_val, balance = _parse_sofi_amount_balance(str(row[3]))
+                else:
+                    # Try to find amount in remaining cells
+                    for cell in row[2:]:
+                        amount_val, balance = _parse_sofi_amount_balance(str(cell))
+                        if amount_val is not None:
+                            break
+
+                if amount_val is not None:
+                    if amount_val < 0:
+                        debit = abs(amount_val)
+                        credit = None
+                    else:
+                        debit = None
+                        credit = abs(amount_val)
+
+                    transactions.append(Transaction(
+                        date=date_str,
+                        description=full_desc,
+                        debit=debit,
+                        credit=credit,
+                        balance=balance,
+                    ))
+                continue
+
+        # ─── Format B: Single-cell rows ────────────────────────────────
+        # "Jan 31, 2026 Debit Card ARCO #42551 AMPM -$40.35 $95,744.25 Transaction ID: 586-1"
+        if len(row) == 1:
+            line = str(row[0]).strip()
+
+            # Strip trailing Transaction ID
+            line_clean = re.sub(
+                r"\s+Transaction\s+ID:\s*\S+\s*$", "", line, flags=re.IGNORECASE
+            )
+
+            m = _SOFI_SINGLE_LINE_RE.match(line)
+            if m:
+                date_str = parse_date(
+                    m.group("date").strip(), statement_year=statement_year
+                )
+                if date_str:
+                    txn_type = m.group("type").strip()
+                    description = m.group("desc").strip()
+                    full_desc = f"{txn_type} {description}"
+
+                    amount_val = clean_amount(m.group("amount"))
+                    balance_raw = m.group("balance")
+                    balance = clean_amount(balance_raw)
+                    if balance is not None:
+                        balance = abs(balance)
+
+                    if amount_val is not None:
+                        if amount_val < 0:
+                            debit = abs(amount_val)
+                            credit = None
+                        else:
+                            debit = None
+                            credit = abs(amount_val)
+
+                        transactions.append(Transaction(
+                            date=date_str,
+                            description=full_desc,
+                            debit=debit,
+                            credit=credit,
+                            balance=balance,
+                        ))
+                    continue
+
+            # Fallback: try generic line-parsing for single-cell rows
+            # that didn't match the strict regex but might still be data
+            if not re.search(r"\d{1,2}[/\-]\d{1,2}", line_clean) and not re.search(
+                r"[A-Za-z]{3}\s+\d{1,2}", line_clean
+            ):
+                continue
+
+            # Extract date from start of line
+            date_str = None
+            leftover = line_clean
+            # Try "Mon DD, YYYY" format first
+            m_date = re.match(
+                r"([A-Za-z]{3}\s+\d{1,2}(?:,?\s+\d{4})?)\s+(.*)", line_clean
+            )
+            if m_date:
+                date_str = parse_date(
+                    m_date.group(1).strip(), statement_year=statement_year
+                )
+                leftover = m_date.group(2).strip()
+            if not date_str:
+                m_date = re.match(
+                    r"(\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+(.*)", line_clean
+                )
+                if m_date:
+                    date_str = parse_date(
+                        m_date.group(1).strip(), statement_year=statement_year
+                    )
+                    leftover = m_date.group(2).strip()
+
+            if not date_str:
+                continue
+
+            # Extract amounts from the end of the leftover text
+            amount_matches = list(re.finditer(
+                r"[+-]?\$?[\d,]+\.\d{2}", leftover
+            ))
+            if not amount_matches:
+                continue
+
+            # Last match is typically balance, second-to-last is amount
+            if len(amount_matches) >= 2:
+                amount_val = clean_amount(amount_matches[-2].group())
+                balance = clean_amount(amount_matches[-1].group())
+                if balance is not None:
+                    balance = abs(balance)
+                desc_end = amount_matches[-2].start()
+            else:
+                amount_val = clean_amount(amount_matches[-1].group())
+                balance = None
+                desc_end = amount_matches[-1].start()
+
+            description = leftover[:desc_end].strip()
+            if not description:
+                description = leftover
+
+            if amount_val is not None:
+                if amount_val < 0:
+                    debit = abs(amount_val)
+                    credit = None
+                else:
+                    debit = None
+                    credit = abs(amount_val)
+
+                transactions.append(Transaction(
+                    date=date_str,
+                    description=description,
+                    debit=debit,
+                    credit=credit,
+                    balance=balance,
+                ))
+
+    return transactions
+
+
 def process_single_statement(file_path: Path) -> StatementResult:
     warnings: List[str] = []
     alteration = detect_altered_statement(file_path)
@@ -680,6 +962,31 @@ def process_single_statement(file_path: Path) -> StatementResult:
             template.template_id,
             template.layout_family,
             template.parser_format,
+        )
+
+    # ── SoFi Bank: signed amount with TYPE column ──────────────────────
+    sofi_transactions: List[Transaction] = []
+    if template and template.parser_format == "sofi_signed_type":
+        sofi_transactions = _parse_sofi_signed_type_rows(
+            rows, statement_year=stmt_year
+        )
+    if sofi_transactions:
+        confidence = calculate_confidence([t.dict() for t in sofi_transactions])
+        raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
+        LOGGER.info(
+            "[%s] sofi_signed_type -> %d transactions",
+            file_path.name,
+            len(sofi_transactions),
+        )
+        return _statement_result(
+            filename=file_path.name,
+            transactions=sofi_transactions,
+            confidence=confidence,
+            pdf_type=pdf_type,
+            warnings=warnings,
+            rows=rows,
+            raw_text=raw_text,
+            header_idx=detect_header_row(rows),
         )
 
     repeated_transactions: List[Transaction] = []

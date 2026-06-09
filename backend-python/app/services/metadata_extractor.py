@@ -10,6 +10,10 @@ from app.models.schemas import Transaction
 
 # === EXISTING PATTERNS (unchanged) ===
 US_BANK_PATTERNS = [
+    # SoFi must be matched early — their statements list other banks
+    # in the insured deposit program (BoA, Huntington, etc.)
+    (r"\bsofi\s+bank\b", "SoFi Bank"),
+    (r"\bsofi\b", "SoFi Bank"),
     (r"\bbank\s+of\s+america\b", "Bank of America"),
     (r"\bwells\s*fargo\b", "Wells Fargo"),
     (r"\bjpmorgan\s+chase\b", "JPMorgan Chase"),
@@ -55,8 +59,6 @@ US_BANK_PATTERNS = [
     (r"\bnavy\s+federal\b", "Navy Federal Credit Union"),
     (r"\bnavyfederal\b", "Navy Federal Credit Union"),
     # Online & Fintech Banks
-    (r"\bsofi\s+bank\b", "SoFi Bank"),
-    (r"\bsofi\b", "SoFi Bank"),
     # More specific brand patterns (must appear after generic patterns)
     (r"\bcitibusiness\b", "Citibank"),
     (r"\bwellsfargo\.com\b", "Wells Fargo"),

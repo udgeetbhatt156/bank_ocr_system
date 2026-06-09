@@ -39,7 +39,9 @@ export function SummaryCard({
             {title}
           </p>
           <p className="text-xl font-bold tracking-tight text-foreground">
-            {value}
+            {title === "Account Number"
+          ? `${"X".repeat(Math.max(0, String(value).length - 4))}-${String(value).slice(-4)}`
+          : value}
           </p>
           {subtitle && (
             <p className="text-xs text-muted-foreground">{subtitle}</p>

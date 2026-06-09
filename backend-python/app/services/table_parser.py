@@ -84,6 +84,10 @@ COLUMN_PATTERNS = {
         r'\btran\s*code\b',
         r'\btran(?:saction)?\s*type\b',
     ],
+    'type': [
+        r'\btype\b',
+        r'\btransaction\s*type\b',
+    ],
     'amount': [
         r'\bamount\b',
         r'\btransaction\s*amount\b',

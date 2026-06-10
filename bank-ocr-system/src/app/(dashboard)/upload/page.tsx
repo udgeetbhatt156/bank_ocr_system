@@ -13,7 +13,7 @@ import { Loader2, Rocket, Trash2, ArrowRight } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function UploadPage() {
-  const { files, isProcessing, processFiles, clearFiles, clearResults, documents } =
+  const { files, isProcessing, processFiles, clearFiles, clearResults, documents, selectedBank, setSelectedBank } =
     useOcrStore();
   const router = useRouter();
 
@@ -116,12 +116,12 @@ export default function UploadPage() {
             )}
             <div>
             
-        <Select>
-        <SelectTrigger id="bank-type-filter" className="w-[140px] h-9">
-          <SelectValue placeholder="All Bank Types" />
+        <Select value={selectedBank} onValueChange={setSelectedBank}>
+        <SelectTrigger id="bank-type-filter" className="w-[180px] h-9">
+          <SelectValue placeholder="Auto Detect" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">Select Bank Type</SelectItem>
+          <SelectItem value="all">Auto Detect</SelectItem>
           <SelectItem value="bancfirst">BancFirst</SelectItem>
           <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
           <SelectItem value="citibank">Citi Bank</SelectItem>
@@ -129,6 +129,7 @@ export default function UploadPage() {
           <SelectItem value="bank-of-america">Bank Of America</SelectItem>
           <SelectItem value="sofi-bank">SoFi Bank</SelectItem>
           <SelectItem value="navy-federal">Navy Federal Credit Union</SelectItem>
+          <SelectItem value="wells-fargo">Wells Fargo</SelectItem>
           <SelectItem value="palmetto">Palmetto State Bank</SelectItem>
           <SelectItem value="washington-trust">Washington Trust Bank</SelectItem>
         </SelectContent>

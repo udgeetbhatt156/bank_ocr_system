@@ -355,6 +355,67 @@ TEMPLATES: List[StatementTemplate] = [
 ]
 
 
+# ── Bank-key lookup for manual bank selection (hybrid mode) ──────────
+
+# Maps UI dropdown values → list of template_ids for that bank.
+# When the user manually selects a bank, we skip full template scoring
+# and restrict to these candidates only.
+BANK_KEY_MAP: Dict[str, List[str]] = {
+    "bancfirst":        ["bancfirst_sectioned_activity_v1"],
+    "peoplesouth-bank": ["peoplessouth_signed_amount_v1", "peoplessouth_activity_statement_v1"],
+    "citibank":         ["citi_streamlined_checking_v1"],
+    "chase":            ["chase_repeated_blocks_v1", "chase_total_checking_sectioned_v1"],
+    "bank-of-america":  ["bank_of_america_sectioned_v1"],
+    "sofi-bank":        ["sofi_digital_activity_v1"],
+    "navy-federal":     ["genreich_signed_amount_v1", "navy_federal_scanned_v1"],
+    "wells-fargo":      ["wells_fargo_business_checking_v1"],
+}
+
+# Fast O(1) lookup index: template_id → StatementTemplate
+_TEMPLATE_INDEX: Dict[str, "StatementTemplate"] = {t.template_id: t for t in TEMPLATES}
+
+
+def lookup_template_by_bank_key(
+    bank_key: str,
+    rows: List[List[str]],
+    *,
+    filename: str = "",
+) -> Optional["StatementTemplate"]:
+    """Lookup template by UI bank_key.
+
+    If the bank has a single template, return it directly.
+    If the bank has multiple templates, score only among those templates
+    to pick the best variant — avoids cross-bank mis-matches while still
+    selecting the right layout variant.
+
+    Returns ``None`` if the bank_key is not in BANK_KEY_MAP (caller should
+    fall back to auto-detect).
+    """
+    template_ids = BANK_KEY_MAP.get(bank_key)
+    if not template_ids:
+        return None  # Unknown bank_key → fall back to auto-detect
+
+    if len(template_ids) == 1:
+        return _TEMPLATE_INDEX[template_ids[0]]
+
+    # Multiple templates for this bank — run restricted scoring
+    candidates = [_TEMPLATE_INDEX[tid] for tid in template_ids]
+    text = f"{filename}\n{_flatten(rows)}".lower()
+    best: Optional["StatementTemplate"] = None
+    best_score = 0
+    for tmpl in candidates:
+        score = 0
+        for kw in tmpl.header_keywords:
+            if kw.lower() in text:
+                score += 1
+        for sf in tmpl.sample_files:
+            if sf.lower() in text:
+                score += 6
+        if score > best_score:
+            best, best_score = tmpl, score
+    return best or candidates[0]  # fallback to first if no keywords match
+
+
 def _flatten(rows: List[List[str]], limit: int = 80) -> str:
     return "\n".join(" ".join(str(cell) for cell in row) for row in rows[:limit]).lower()
 

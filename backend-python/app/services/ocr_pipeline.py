@@ -1137,7 +1137,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
             template.parser_format,
         )
 
-    # ── Citibank: fragmented multi-line ────────────────────────────────────
+    # Citibank: fragmented multi-line
     citi_transactions: List[Transaction] = []
     if template and template.parser_format == "citi_checking":
         citi_transactions = _parse_citi_checking_rows(
@@ -1162,7 +1162,7 @@ def process_single_statement(file_path: Path) -> StatementResult:
             header_idx=detect_header_row(rows),
         )
 
-    # ── SoFi Bank: signed amount with TYPE column ──────────────────────
+    # SoFi Bank: signed amount with TYPE column
     sofi_transactions: List[Transaction] = []
     if template and template.parser_format == "sofi_signed_type":
         sofi_transactions = _parse_sofi_signed_type_rows(

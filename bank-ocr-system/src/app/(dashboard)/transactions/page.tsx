@@ -161,13 +161,15 @@ export default function TransactionsPage() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          title="Total Credits"
-          value={formatUSD(stats.totalCredits)}
-          subtitle="All incoming amounts from statement"
-          icon={<TrendingUp className="h-5 w-5" />}
-          accentColor="bg-[var(--credit)]/10 text-[var(--credit)]"
-        />
+        <Link href="/transactions/credits">
+          <SummaryCard
+            title="Total Credits"
+            value={formatUSD(stats.totalCredits)}
+            subtitle="All incoming amounts from statement"
+            icon={<TrendingUp className="h-5 w-5" />}
+            accentColor="bg-[var(--credit)]/10 text-[var(--credit)]"
+          />
+        </Link>
         <SummaryCard
           title="Total Debits"
           value={formatUSD(stats.totalDebits)}

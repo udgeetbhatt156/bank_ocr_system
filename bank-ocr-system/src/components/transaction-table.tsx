@@ -13,6 +13,7 @@ import {
 } from "@tanstack/react-table";
 import type { ColumnVisibility, TransactionRecord } from "@/lib/api";
 import { formatUSD } from "@/lib/currency";
+import { getRevenueStatus } from "@/lib/revenue-filter";
 import {
   Table,
   TableBody,
@@ -114,15 +115,27 @@ const columns: ColumnDef<TxRow>[] = [
         Credit <ArrowUpDown className="h-3 w-3" />
       </Button>
     ),
-    cell: ({ getValue }) => {
+    cell: ({ getValue, row }) => {
       const val = getValue() as number | null;
       const display = formatAmount(val);
+      const desc = row.original.description;
+      const status = getRevenueStatus(desc, val);
+
+      let badge = null;
+      if (val !== null && val > 0) {
+        if (status === "revenue") {
+          badge = <span className="ml-2 text-[10px] uppercase font-bold text-green-500 tracking-wider bg-green-500/10 px-1.5 py-0.5 rounded-md">Revenue</span>;
+        } else if (status === "deduction") {
+          badge = <span className="ml-2 text-[10px] uppercase font-bold text-red-500 tracking-wider bg-red-500/10 px-1.5 py-0.5 rounded-md">Deduction</span>;
+        }
+      }
+
       return (
-        <span
-          className={`whitespace-nowrap text-sm font-medium ${display !== "—" ? "text-[var(--credit)]" : "text-muted-foreground"
-            }`}
-        >
-          {display}
+        <span className="flex items-center whitespace-nowrap text-sm font-medium">
+          <span className={display !== "—" ? "text-[var(--credit)]" : "text-muted-foreground"}>
+            {display}
+          </span>
+          {badge}
         </span>
       );
     },
@@ -188,7 +201,13 @@ export function TransactionTable({ data, typeFilter = "all" }: TransactionTableP
     let credit = 0;
     for (const row of data) {
       debit += Number(row.debit || 0);
-      credit += Number(row.credit || 0);
+      const cVal = Number(row.credit || 0);
+      if (cVal > 0) {
+        const status = getRevenueStatus(row.description, cVal);
+        if (status === "revenue") {
+          credit += cVal;
+        }
+      }
     }
     return { debit, credit };
   }, [data]);

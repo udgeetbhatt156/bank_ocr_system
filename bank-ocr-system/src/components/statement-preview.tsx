@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { AccuracyBadge } from "@/components/accuracy-badge";
 import { cn } from "@/lib/utils";
 import { formatUSD } from "@/lib/currency";
+import { getRevenueStatus } from "@/lib/revenue-filter";
 
 /* SCAN OVERLAY — animated laser line */
 function ScanOverlay() {
@@ -70,7 +71,11 @@ function ScanOverlay() {
 /* EXTRACTED DATA PANEL */
 function ExtractedDataPanel({ doc }: { doc: DocumentResult }) {
   const txns = doc.transactions;
-  const totalCredits = txns.reduce((sum, t) => sum + Number(t.credit || 0), 0);
+  const totalCredits = txns.reduce((sum, t) => {
+    const cVal = Number(t.credit || 0);
+    if (cVal > 0 && getRevenueStatus(t.description || "", cVal) === "revenue") return sum + cVal;
+    return sum;
+  }, 0);
   const totalDebits = txns.reduce((sum, t) => sum + Number(t.debit || 0), 0);
 
   return (

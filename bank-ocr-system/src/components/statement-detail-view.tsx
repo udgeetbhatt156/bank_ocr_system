@@ -2,6 +2,7 @@
 
 import type { DocumentResult } from "@/lib/api";
 import { formatUSD } from "@/lib/currency";
+import { getRevenueStatus } from "@/lib/revenue-filter";
 import { SummaryCard } from "@/components/summary-card";
 import { TransactionTable } from "@/components/transaction-table";
 import {
@@ -36,7 +37,10 @@ export function StatementDetailView({
   let totalCredits = 0;
   let totalDebits = 0;
   for (const t of doc.transactions) {
-    totalCredits += Number(t.credit || 0);
+    const cVal = Number(t.credit || 0);
+    if (cVal > 0 && getRevenueStatus(t.description || "", cVal) === "revenue") {
+      totalCredits += cVal;
+    }
     totalDebits += Number(t.debit || 0);
   }
   const netFlow = totalCredits - totalDebits;

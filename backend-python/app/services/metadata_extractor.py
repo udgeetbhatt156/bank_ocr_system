@@ -113,12 +113,12 @@ def _extract_account_number(text: str) -> Optional[str]:
     return None
 
 
-# def _extract_customer_number(text: str) -> Optional[str]:
+# def _extract_customer_name(text: str) -> Optional[str]:
 #     """Enhanced for SAA8460 style customer numbers."""
 #     patterns = [
 #         r"customer\s*(?:number|no\.?|id)\s*[:\s]*([A-Za-z0-9\-]{4,24})",
 #         r"customer\s*#\s*([A-Za-z0-9\-]{4,24})",
-#         r"Customer Number:\s*([A-Za-z0-9]+)",           # New for this PDF
+#         r"Customer Name:\s*([A-Za-z0-9]+)",           # New for this PDF
 #         r"Cust(?:omer)?\s*(?:no\.?|number|id|#)\s*[:\s]*([A-Za-z0-9\-]{4,24})",
 #     ]
 #     for pat in patterns:
@@ -127,7 +127,7 @@ def _extract_account_number(text: str) -> Optional[str]:
 #             return m.group(1).strip()
 #     return None
 
-def _extract_customer_number(text: str) -> Optional[str]:
+def _extract_customer_name(text: str) -> Optional[str]:
     """Enhanced for PeopleSouth Bank and similar statements.
     Handles cases like SAA8460-style IDs, statement/member numbers, and numeric IDs near header.
     """
@@ -135,7 +135,7 @@ def _extract_customer_number(text: str) -> Optional[str]:
         # Standard customer patterns (existing + improved)
         r"customer\s*(?:number|no\.?|id)\s*[:\s]*([A-Za-z0-9\-]{4,24})",
         r"customer\s*#\s*([A-Za-z0-9\-]{4,24})",
-        r"Customer Number:\s*([A-Za-z0-9]+)",
+        r"Customer Name:\s*([A-Za-z0-9]+)",
         r"Cust(?:omer)?\s*(?:no\.?|number|id|#)\s*[:\s]*([A-Za-z0-9\-]{4,24})",
         
         # Member / Statement ID patterns (common in credit unions & regional banks)
@@ -212,6 +212,6 @@ def extract_statement_metadata(
     return {
         "bank_name": _detect_bank_name(text),
         "account_number": _extract_account_number(text),
-        "customer_number": _extract_customer_number(text),
+        "customer_name": _extract_customer_name(text),
         "current_balance": _extract_current_balance(text, transactions),
     }

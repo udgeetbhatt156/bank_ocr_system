@@ -117,7 +117,7 @@ def _statement_result(
         debug_extraction=debug_extraction or {},
         bank_name=meta["bank_name"],
         account_number=meta["account_number"],
-        customer_number=meta["customer_number"],
+        customer_name=meta["customer_name"],
         current_balance=meta["current_balance"],
         total_debits=totals["total_debits"],
         total_credits=totals["total_credits"],

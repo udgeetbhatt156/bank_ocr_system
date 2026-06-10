@@ -47,7 +47,7 @@ export interface StatementListItem {
   status: string;
   bankName: string | null;
   accountNumber: string | null;
-  customerNumber: string | null;
+  customerName: string | null;
   currentBalance: number | null;
   transactionCount: number;
   totalCredits: number;

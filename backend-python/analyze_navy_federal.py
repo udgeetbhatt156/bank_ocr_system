@@ -69,7 +69,7 @@ print('='*80)
 meta = extract_statement_metadata(all_rows, [], header_idx=None)
 print(f'  Bank: {meta["bank_name"]}')
 print(f'  Account: {meta["account_number"]}')
-print(f'  Customer: {meta["customer_number"]}')
+print(f'  Customer: {meta["customer_name"]}')
 print(f'  Balance: {meta["current_balance"]}')
 
 # Step 4: Template selection

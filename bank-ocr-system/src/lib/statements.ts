@@ -17,7 +17,7 @@ export type OcrDocumentPayload = {
   raw_text?: string | null;
   bank_name?: string | null;
   account_number?: string | null;
-  customer_number?: string | null;
+  customer_name?: string | null;
   current_balance?: number | null;
   total_debits?: number;
   total_credits?: number;
@@ -46,7 +46,7 @@ type StoredStatementMeta = {
   pdf_type?: string | null;
   bank_name?: string | null;
   account_number?: string | null;
-  customer_number?: string | null;
+  customer_name?: string | null;
   current_balance?: number | null;
   total_debits?: number | null;
   total_credits?: number | null;
@@ -78,7 +78,7 @@ type StatementWithRelations = {
   account: {
     bankName: string;
     accountNumber: string;
-    customerNumber?: string | null;
+    customerName?: string | null;
   };
   transactions: Array<{
     date: Date;
@@ -105,7 +105,7 @@ function buildRawData(doc: OcrDocumentPayload): StoredStatementMeta {
     pdf_type: doc.pdf_type ?? null,
     bank_name: doc.bank_name ?? null,
     account_number: doc.account_number ?? null,
-    customer_number: doc.customer_number ?? null,
+    customer_name: doc.customer_name ?? null,
     current_balance: doc.current_balance ?? null,
     total_debits: doc.total_debits ?? null,
     total_credits: doc.total_credits ?? null,
@@ -121,7 +121,7 @@ function buildRawData(doc: OcrDocumentPayload): StoredStatementMeta {
 
 function parseStoredMeta(
   rawData: unknown,
-  account?: { bankName: string; accountNumber: string; customerNumber?: string | null }
+  account?: { bankName: string; accountNumber: string; customerName?: string | null }
 ) {
   const meta =
     rawData && typeof rawData === "object"
@@ -135,7 +135,7 @@ function parseStoredMeta(
       normalizeSyntheticAccountNumber(meta.account_number) ??
       normalizeSyntheticAccountNumber(account?.accountNumber) ??
       null,
-    customer_number: meta.customer_number ?? account?.customerNumber ?? null,
+    customer_name: meta.customer_name ?? account?.customerName ?? null,
     current_balance:
       meta.current_balance != null ? Number(meta.current_balance) : null,
     confidence: meta.confidence ?? null,
@@ -323,7 +323,7 @@ export async function persistOcrDocument(
     pdfType: doc.pdf_type ?? null,
     bankName: doc.bank_name?.trim() || null,
     accountNumber: doc.account_number?.trim() || null,
-    customerNumber: doc.customer_number?.trim() || null,
+    customerName: doc.customer_name?.trim() || null,
     currentBalance:
       doc.current_balance != null ? doc.current_balance : null,
     processedAt: new Date(),
@@ -398,7 +398,7 @@ export function statementToDocumentResult(
     raw_text: options?.includeRawText ? meta.raw_text : "Not Found.",
     bank_name: meta.bank_name,
     account_number: meta.account_number,
-    customer_number: meta.customer_number,
+    customer_name: meta.customer_name,
     current_balance: meta.current_balance,
     total_debits: meta.total_debits ?? undefined,
     total_credits: meta.total_credits ?? undefined,
@@ -415,13 +415,13 @@ function buildDocumentFromSummary(
     confidence: number | null;
     bankName: string | null;
     accountNumber: string | null;
-    customerNumber: string | null;
+    customerName: string | null;
     currentBalance: unknown;
     rawData: unknown;
     account: {
       bankName: string;
       accountNumber: string;
-      customerNumber?: string | null;
+      customerName?: string | null;
     };
   },
   transactions: TransactionRecord[]
@@ -435,7 +435,7 @@ function buildDocumentFromSummary(
     raw_text: "",
     bank_name: summary.bankName ?? meta.bank_name,
     account_number: summary.accountNumber ?? meta.account_number,
-    customer_number: summary.customerNumber ?? meta.customer_number,
+    customer_name: summary.customerName ?? meta.customer_name,
     current_balance:
       summary.currentBalance != null
         ? Number(summary.currentBalance)
@@ -460,13 +460,13 @@ export async function fetchUserDocuments(
         confidence: true,
         bankName: true,
         accountNumber: true,
-        customerNumber: true,
+        customerName: true,
         currentBalance: true,
         account: {
           select: {
             bankName: true,
             accountNumber: true,
-            customerNumber: true,
+            customerName: true,
           },
         },
       },
@@ -508,13 +508,13 @@ export async function getStatementForUser(statementId: string, userId: string) {
       confidence: true,
       bankName: true,
       accountNumber: true,
-      customerNumber: true,
+      customerName: true,
       currentBalance: true,
       account: {
         select: {
           bankName: true,
           accountNumber: true,
-          customerNumber: true,
+          customerName: true,
         },
       },
       transactions: {
@@ -581,7 +581,7 @@ export function formatStatementDetail(
       confidence: statement.confidence,
       bankName: statement.bankName,
       accountNumber: statement.accountNumber,
-      customerNumber: statement.customerNumber,
+      customerName: statement.customerName,
       currentBalance: statement.currentBalance,
       rawData: null,
       account: statement.account,
@@ -598,7 +598,7 @@ export type StatementListItem = {
   status: string;
   bankName: string | null;
   accountNumber: string | null;
-  customerNumber: string | null;
+  customerName: string | null;
   currentBalance: number | null;
   transactionCount: number;
   totalCredits: number;
@@ -620,13 +620,13 @@ export async function fetchUserStatementList(
         status: true,
         bankName: true,
         accountNumber: true,
-        customerNumber: true,
+        customerName: true,
         currentBalance: true,
         account: {
           select: {
             bankName: true,
             accountNumber: true,
-            customerNumber: true,
+            customerName: true,
           },
         },
         _count: { select: { transactions: true } },
@@ -667,7 +667,7 @@ export async function fetchUserStatementList(
         normalizeSyntheticAccountNumber(s.accountNumber) ??
         normalizeSyntheticAccountNumber(s.account.accountNumber) ??
         null,
-      customerNumber: s.customerNumber ?? s.account.customerNumber ?? null,
+      customerName: s.customerName ?? s.account.customerName ?? null,
       currentBalance:
         s.currentBalance != null ? Number(s.currentBalance) : null,
       transactionCount: s._count.transactions,

@@ -23,7 +23,7 @@ model BankAccount {
   accountHolder  String?
   createdAt      DateTime      @default(now())
   userId         String
-  customerNumber String?
+  customerName String?
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   statements     Statement[]
   transactions   Transaction[]
@@ -45,7 +45,7 @@ model Statement {
   bankName       String?
   confidence     Float?
   currentBalance Decimal?      @db.Decimal(14, 2)
-  customerNumber String?
+  customerName String?
   pdfType        String?
   contentHash    String?
   duplicateOfId  String?

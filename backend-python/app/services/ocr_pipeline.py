@@ -39,7 +39,10 @@ from app.services.postprocessor import (
     deduplicate_transactions,
     sum_transaction_totals,
 )
-from app.services.statement_templates import select_statement_template
+from app.services.statement_templates import (
+    lookup_template_by_bank_key,
+    select_statement_template,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1030,7 +1033,11 @@ def _parse_citi_checking_rows(
     return transactions
 
 
-def process_single_statement(file_path: Path) -> StatementResult:
+def process_single_statement(
+    file_path: Path,
+    *,
+    bank_hint: Optional[str] = None,
+) -> StatementResult:
     warnings: List[str] = []
     alteration = detect_altered_statement(file_path)
     if alteration.is_altered:
@@ -1123,11 +1130,35 @@ def process_single_statement(file_path: Path) -> StatementResult:
     stmt_year, stmt_month = detect_statement_period(rows)
     LOGGER.info(f"[{file_path.name}] statement_period year={stmt_year} month={stmt_month}")
     preliminary_meta = extract_statement_metadata(rows, [], header_idx=None)
-    template = select_statement_template(
-        rows,
-        filename=file_path.name,
-        bank_name=preliminary_meta.get("bank_name"),
-    )
+
+    # ── Template selection: manual hint vs auto-detect ──────────────────
+    if bank_hint and bank_hint not in ("all", "auto"):
+        template = lookup_template_by_bank_key(
+            bank_hint, rows, filename=file_path.name,
+        )
+        if template:
+            LOGGER.info(
+                "[%s] bank_hint=%s → template=%s parser=%s",
+                file_path.name,
+                bank_hint,
+                template.template_id,
+                template.parser_format,
+            )
+        else:
+            warnings.append(
+                f"Bank hint '{bank_hint}' has no template — falling back to auto-detect"
+            )
+            template = select_statement_template(
+                rows,
+                filename=file_path.name,
+                bank_name=preliminary_meta.get("bank_name"),
+            )
+    else:
+        template = select_statement_template(
+            rows,
+            filename=file_path.name,
+            bank_name=preliminary_meta.get("bank_name"),
+        )
     if template:
         LOGGER.info(
             "[%s] template=%s layout=%s parser=%s",
@@ -1619,6 +1650,7 @@ async def process_uploaded_file(
     upload: UploadFile,
     *,
     with_duplicate_check: bool,
+    bank_hint: Optional[str] = None,
 ) -> StatementResult:
     original_filename = upload.filename or f"document-{uuid.uuid4().hex}.bin"
     target_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{original_filename}"
@@ -1633,7 +1665,7 @@ async def process_uploaded_file(
             file_hash = generate_file_hash(target_path)
             LOGGER.info(f"File hash for {original_filename}: {file_hash[:16]}...")
 
-        result = process_single_statement(target_path)
+        result = process_single_statement(target_path, bank_hint=bank_hint)
         result.filename = original_filename
 
         if with_duplicate_check:

@@ -31,7 +31,7 @@ export interface DocumentResult {
   transactions: TransactionRecord[];
   bank_name?: string | null;
   account_number?: string | null;
-  customer_number?: string | null;
+  customer_name?: string | null;
   current_balance?: number | null;
   total_debits?: number;
   total_credits?: number;
@@ -127,12 +127,18 @@ export async function apiGetMe() {
 
 export async function apiUploadStatements(
   files: File[],
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  bankHint?: string,
 ): Promise<ProcessResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const formData = new FormData();
     files.forEach((f) => formData.append("files", f));
+
+    // Append bank hint for manual bank selection (skip template auto-detect)
+    if (bankHint && bankHint !== "all") {
+      formData.append("bank_hint", bankHint);
+    }
 
     xhr.upload.addEventListener("progress", (e) => {
       if (e.lengthComputable && onProgress) {

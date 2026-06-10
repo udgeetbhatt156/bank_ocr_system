@@ -212,8 +212,8 @@ export default function TransactionsPage() {
             accentColor="bg-violet-500/10 text-violet-600 dark:text-violet-400"
           />
           <SummaryCard
-            title="Customer Number"
-            value={displayMeta(activeDocument?.customer_number)}
+            title="Customer Name"
+            value={displayMeta(activeDocument?.customer_name)}
             subtitle="Extracted from statement"
             icon={<User className="h-5 w-5" />}
             accentColor="bg-amber-500/10 text-amber-600 dark:text-amber-400"

@@ -12,7 +12,7 @@ import uuid
 
 import aiofiles
 import pdfplumber
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.config import UPLOAD_DIR
 from app.models.schemas import OCRResponse, StatementResult, Transaction
@@ -961,10 +961,16 @@ async def _process_uploaded_file(
 
 
 @router.post("/process", response_model=OCRResponse)
-async def process_documents(files: List[UploadFile] = File(...)):
+async def process_documents(
+    files: List[UploadFile] = File(...),
+    bank_hint: Optional[str] = Form(None),
+):
     """
     Process bank statement documents without duplicate checking.
     Use /process-with-duplicate-check for duplicate detection.
+
+    Optional ``bank_hint`` (e.g. "chase", "sofi-bank") skips template
+    auto-detection and loads the corresponding template directly.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
@@ -972,7 +978,9 @@ async def process_documents(files: List[UploadFile] = File(...)):
     results: List[StatementResult] = []
     for upload in files:
         results.append(
-            await process_uploaded_file(upload, with_duplicate_check=False)
+            await process_uploaded_file(
+                upload, with_duplicate_check=False, bank_hint=bank_hint,
+            )
         )
 
     return OCRResponse(status="success", documents=results)
@@ -981,10 +989,14 @@ async def process_documents(files: List[UploadFile] = File(...)):
 @router.post("/process-with-duplicate-check", response_model=OCRResponse)
 async def process_documents_with_duplicate_check(
     files: List[UploadFile] = File(...),
+    bank_hint: Optional[str] = Form(None),
 ):
     """
     Process bank statement documents WITH duplicate detection hashes.
     The Node.js layer checks these hashes against the database before saving.
+
+    Optional ``bank_hint`` (e.g. "chase", "sofi-bank") skips template
+    auto-detection and loads the corresponding template directly.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
@@ -992,7 +1004,9 @@ async def process_documents_with_duplicate_check(
     results: List[StatementResult] = []
     for upload in files:
         results.append(
-            await process_uploaded_file(upload, with_duplicate_check=True)
+            await process_uploaded_file(
+                upload, with_duplicate_check=True, bank_hint=bank_hint,
+            )
         )
 
     return OCRResponse(status="success", documents=results)

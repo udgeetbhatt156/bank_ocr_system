@@ -35,6 +35,7 @@ interface OcrState {
   isHydrated: boolean;
   isHydrating: boolean;
   isLoadingStatementList: boolean;
+  selectedBank: string;
 
   /* actions */
   addFiles: (newFiles: File[]) => { added: string[]; duplicates: string[] };
@@ -45,6 +46,7 @@ interface OcrState {
   hydrateFromServer: (force?: boolean) => Promise<void>;
   loadStatementList: (force?: boolean) => Promise<StatementListItem[]>;
   setActiveTab: (tab: string) => void;
+  setSelectedBank: (bank: string) => void;
 
   /* computed-like helpers */
   allTransactions: () => (TransactionRecord & { _filename: string })[];
@@ -74,6 +76,7 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   isHydrated: false,
   isHydrating: false,
   isLoadingStatementList: false,
+  selectedBank: "all",
 
   addFiles: (newFiles) => {
     const { files, documents } = get();
@@ -157,8 +160,10 @@ export const useOcrStore = create<OcrState>((set, get) => ({
       }, 1000);
 
       const raw = pending.map((f) => f.file);
-      const result = await apiUploadStatements(raw, (pct) =>
-        set({ uploadProgress: pct })
+      const result = await apiUploadStatements(
+        raw,
+        (pct) => set({ uploadProgress: pct }),
+        get().selectedBank,
       );
 
       set((s) => ({
@@ -246,6 +251,8 @@ export const useOcrStore = create<OcrState>((set, get) => ({
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+
+  setSelectedBank: (bank) => set({ selectedBank: bank }),
 
   allTransactions: () => {
     const { documents } = get();

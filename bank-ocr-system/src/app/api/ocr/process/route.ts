@@ -102,6 +102,12 @@ export async function POST(request: Request) {
       });
     }
 
+    // Forward bank_hint (manual bank selection) to the Python OCR service
+    const bankHint = formData.get("bank_hint") as string | null;
+    if (bankHint) {
+      upstreamForm.append("bank_hint", bankHint);
+    }
+
     // Call Python OCR with duplicate-check endpoint (returns file_hash + content_hash)
     const response = await axios.post(
       `${PYTHON_OCR_URL}/api/ocr/process-with-duplicate-check`,

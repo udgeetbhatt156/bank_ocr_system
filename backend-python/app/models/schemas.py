@@ -26,7 +26,7 @@ class StatementResult(BaseModel):
     debug_extraction: Dict[str, Any] = Field(default_factory=dict)
     bank_name: Optional[str] = None
     account_number: Optional[str] = None
-    customer_number: Optional[str] = None
+    customer_name: Optional[str] = None
     current_balance: Optional[float] = None
     total_debits: float = 0.0
     total_credits: float = 0.0

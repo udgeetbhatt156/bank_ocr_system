@@ -355,7 +355,7 @@ TEMPLATES: List[StatementTemplate] = [
 ]
 
 
-# ── Bank-key lookup for manual bank selection (hybrid mode) ──────────
+#Bank-key lookup for manual bank selection (hybrid mode)
 
 # Maps UI dropdown values → list of template_ids for that bank.
 # When the user manually selects a bank, we skip full template scoring

@@ -8,11 +8,13 @@ from pydantic import BaseModel, Field
 
 class Transaction(BaseModel):
     """Single transaction record"""
+    seq: Optional[int] = None
     date: Optional[str] = None
     description: str
     debit: Optional[float] = None
     credit: Optional[float] = None
     balance: Optional[float] = None
+    transaction_type: Optional[str] = None
 
 
 class StatementResult(BaseModel):
@@ -27,9 +29,18 @@ class StatementResult(BaseModel):
     bank_name: Optional[str] = None
     account_number: Optional[str] = None
     customer_name: Optional[str] = None
+    statement_date: Optional[str] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    opening_balance: Optional[float] = None
     current_balance: Optional[float] = None
+    closing_balance: Optional[float] = None
     total_debits: float = 0.0
+    debit_count: int = 0
     total_credits: float = 0.0
+    credit_count: int = 0
+    checks_register: Optional[List[Dict[str, Any]]] = None
+    validation_errors: List[str] = Field(default_factory=list)
     # Duplicate detection fields
     file_hash: Optional[str] = None
     content_hash: Optional[str] = None

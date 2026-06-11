@@ -228,36 +228,40 @@ def compile_digital_extraction_debug(
     }
 
 
-def extract_digital_pdf(file_path: Path) -> List[List[str]]:
+def extract_digital_pdf(file_path: Path, force_words: bool = False) -> List[List[str]]:
     """Extract rows from a digital PDF using pdfplumber."""
     all_rows: List[List[str]] = []
 
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages:
             page_rows: List[List[str]] = []
-            tables = page.extract_tables()
-            if not tables:
-                tables = page.extract_tables({
-                    "vertical_strategy": "text",
-                    "horizontal_strategy": "text",
-                    "min_words_vertical": 3,
-                    "min_words_horizontal": 1,
-                })
-            if tables:
-                table_rows: List[List[str]] = []
-                for table in tables:
-                    for row in table:
-                        cleaned = [
-                            normalize_extracted_cell(str(c)) if c else ""
-                            for c in row
-                        ]
-                        if any(cleaned):
-                            table_rows.append(cleaned)
-                if _looks_like_transaction_table(table_rows):
-                    page_rows = table_rows
-
-            if not page_rows:
+            
+            if force_words:
                 page_rows = _extract_rows_from_words(page)
+            else:
+                tables = page.extract_tables()
+                if not tables:
+                    tables = page.extract_tables({
+                        "vertical_strategy": "text",
+                        "horizontal_strategy": "text",
+                        "min_words_vertical": 3,
+                        "min_words_horizontal": 1,
+                    })
+                if tables:
+                    table_rows: List[List[str]] = []
+                    for table in tables:
+                        for row in table:
+                            cleaned = [
+                                normalize_extracted_cell(str(c)) if c else ""
+                                for c in row
+                            ]
+                            if any(cleaned):
+                                table_rows.append(cleaned)
+                    if _looks_like_transaction_table(table_rows):
+                        page_rows = table_rows
+
+                if not page_rows:
+                    page_rows = _extract_rows_from_words(page)
 
             all_rows.extend(page_rows)
 

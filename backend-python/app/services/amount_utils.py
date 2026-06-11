@@ -71,3 +71,18 @@ def clean_amount(raw_value: str) -> Optional[float]:
         return val
     except ValueError:
         return None
+
+def clean_psb_amount(raw_value: str) -> Optional[float]:
+    """
+    Clean PeoplesSouth Bank amounts, handling the `-SC` suffix for Service Charges.
+    """
+    if not raw_value or not isinstance(raw_value, str):
+        return None
+    
+    s = raw_value.strip()
+    
+    # Handle the "22.55-SC" service charge marker
+    if s.endswith("-SC") or s.endswith("-sc"):
+        s = s[:-3] + "-" # Replace "-SC" with just "-" to trigger negative logic
+        
+    return clean_amount(s)

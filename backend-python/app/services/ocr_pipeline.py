@@ -3,13 +3,13 @@ import re
 import uuid
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import UploadFile
 from app.core.config import UPLOAD_DIR
 from app.models.schemas import StatementResult, Transaction
 from app.services.altered_statement_detector import detect_altered_statement
-from app.services.amount_utils import clean_amount
+from app.services.amount_utils import clean_amount, clean_psb_amount
 from app.services.date_utils import parse_date
 from app.services.digital_extractor import (
     compile_digital_extraction_debug,
@@ -102,6 +102,15 @@ def _statement_result(
     rejected: bool = False,
     rejection_reason: Optional[str] = None,
     debug_extraction: Optional[Dict] = None,
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    opening_balance: Optional[float] = None,
+    closing_balance: Optional[float] = None,
+    statement_date: Optional[str] = None,
+    credit_count: int = 0,
+    debit_count: int = 0,
+    checks_register: Optional[List[dict]] = None,
+    validation_errors: Optional[List[str]] = None,
 ) -> StatementResult:
     transactions = deduplicate_transactions(transactions)
     _add_reconciliation_warnings(transactions, warnings)
@@ -119,8 +128,17 @@ def _statement_result(
         account_number=meta["account_number"],
         customer_name=meta["customer_name"],
         current_balance=meta["current_balance"],
-        total_debits=totals["total_debits"],
-        total_credits=totals["total_credits"],
+        total_debits=meta.get("total_debits") or totals["total_debits"],
+        total_credits=meta.get("total_credits") or totals["total_credits"],
+        period_start=period_start or meta.get("period_start"),
+        period_end=period_end or meta.get("period_end"),
+        opening_balance=opening_balance or meta.get("opening_balance"),
+        closing_balance=closing_balance or meta.get("current_balance"),
+        statement_date=statement_date or meta.get("statement_date"),
+        credit_count=credit_count or meta.get("credit_count", 0),
+        debit_count=debit_count or meta.get("debit_count", 0),
+        checks_register=checks_register,
+        validation_errors=validation_errors or [],
         file_hash=file_hash,
         content_hash=content_hash,
         is_duplicate=is_duplicate,
@@ -577,6 +595,197 @@ def _parse_sectioned_activity_rows(
         ))
 
     return transactions
+
+
+def _parse_psb_activity_rows(
+    rows: List[List[str]],
+    *,
+    statement_year: Optional[int] = None,
+) -> Tuple[List[Transaction], List[Dict]]:
+    """
+    Dedicated parser for PeoplesSouth Bank "Activity in Date Order" statements.
+    Implements trailing-minus logic, multi-line assembly, and check extraction.
+    Returns (transactions, checks_register).
+    """
+    transactions: List[Transaction] = []
+    checks_register: List[Dict] = []
+    
+    in_activity = False
+    in_checks = False
+    seq_counter = 1
+    
+    skip_patterns = [
+        re.compile(r"MEMBER FDIC NOTICE", re.IGNORECASE),
+        re.compile(r"BUSINESS CHECKING \d+ \(Continued\)", re.IGNORECASE),
+        re.compile(r"Activity in Date Order", re.IGNORECASE),
+        re.compile(r"Date\s+Description\s+Amount", re.IGNORECASE),
+        re.compile(r"\* Denotes missing check numbers", re.IGNORECASE),
+        re.compile(r"^\s*\*+\s*$"), # line of asterisks
+        re.compile(r"Breakdown of Total Service Charge", re.IGNORECASE),
+        re.compile(r"Overdraft item fees year to date", re.IGNORECASE),
+    ]
+
+    for row in rows:
+        row_text = " ".join(str(c) for c in row if str(c).strip()).strip()
+        if not row_text:
+            continue
+            
+        row_condensed = row_text.replace(" ", "").upper()
+            
+        # State transitions
+        if "ACTIVITYINDATEORDER" in row_condensed:
+            in_activity = True
+            in_checks = False
+            continue
+        elif "CHECKSINNUMBERORDER" in row_condensed:
+            in_activity = False
+            in_checks = True
+            continue
+            
+        # Skip rules
+        should_skip = False
+        for pat in skip_patterns:
+            if pat.search(row_text):
+                should_skip = True
+                break
+        if should_skip:
+            continue
+            
+        if in_activity:
+            # Check for starting date: "1/02  ..."
+            date_match = re.match(r"^\s*(\d{1,2}/\d{1,2})\s+", row_text)
+            
+            if date_match:
+                date_str = date_match.group(1)
+                full_date = parse_date(date_str, statement_year=statement_year)
+                rest_of_line = row_text[date_match.end():].strip()
+                
+                # Fix pdfplumber splitting large numbers (e.g. "2 3,500.00" -> "23,500.00")
+                # We only merge if the right side HAS a comma, preventing merges like "Check 40 110.18"
+                rest_of_line = re.sub(r'(?<!\.)\b(\d{1,3})\s+(?=\d{1,3},\d{3}(?:,\d{3})*\.\d{2}(?:-|-SC)?\b)', r'\1', rest_of_line)
+                
+                # Extract the last two numbers
+                num_matches = list(re.finditer(r"[+-]?\$?[\d,]+\.\d{2}(?:-|-SC)?", rest_of_line, re.IGNORECASE))
+                
+                amount_val = None
+                balance_val = None
+                desc = rest_of_line
+                
+                if len(num_matches) >= 2:
+                    amt_str = num_matches[-2].group()
+                    bal_str = num_matches[-1].group()
+                    desc = rest_of_line[:num_matches[-2].start()].strip()
+                    
+                    amount_val = clean_psb_amount(amt_str)
+                    balance_val = clean_psb_amount(bal_str)
+                    if balance_val is not None:
+                        balance_val = abs(balance_val)
+                        
+                elif len(num_matches) == 1:
+                    # Might just be an amount
+                    amt_str = num_matches[0].group()
+                    desc = rest_of_line[:num_matches[0].start()].strip()
+                    amount_val = clean_psb_amount(amt_str)
+                    
+                if amount_val is not None:
+                    is_debit = False
+                    is_credit = False
+                    
+                    amt_str_to_check = num_matches[-2].group() if len(num_matches) >= 2 else num_matches[0].group()
+                    if "-" in amt_str_to_check:
+                        is_debit = True
+                    else:
+                        is_credit = True
+                        
+                    debit = abs(amount_val) if is_debit else None
+                    credit = abs(amount_val) if is_credit else None
+                    
+                    # Transaction type
+                    tx_type = "other"
+                    desc_upper = desc.upper()
+                    if "DBT CRD" in desc_upper: tx_type = "debit_card"
+                    elif "POS DEB" in desc_upper: tx_type = "pos_debit"
+                    elif "POS CRE" in desc_upper: tx_type = "pos_credit"
+                    elif "NET SETLMT" in desc_upper: tx_type = "merchant_settlement"
+                    elif "LOAN PAY" in desc_upper: tx_type = "loan_payment"
+                    elif "TRANSFER" in desc_upper: tx_type = "transfer"
+                    elif "SERVICE CHARGE" in desc_upper: tx_type = "service_charge"
+                    elif "RETRO ADVANCE" in desc_upper or "FUNDING METRICS" in desc_upper: tx_type = "merchant_cash_advance"
+                    
+                    transactions.append(Transaction(
+                        seq=seq_counter,
+                        date=full_date,
+                        description=desc,
+                        debit=debit,
+                        credit=credit,
+                        balance=balance_val,
+                        transaction_type=tx_type
+                    ))
+                    seq_counter += 1
+            else:
+                # Continuation line
+                if transactions:
+                    transactions[-1].description += " " + row_text
+
+        elif in_checks:
+            # "Date  Check No  Amount" e.g., "1/02  1234*  100.00" or "1/05  2 843  68.48"
+            check_matches = re.finditer(r"(\d{1,2}/\d{1,2})\s+([\d\s]+\*?)\s+([\d,]+\.\d{2})", row_text)
+            for m in check_matches:
+                date_str = parse_date(m.group(1), statement_year=statement_year)
+                check_num = m.group(2).replace(" ", "")
+                amt = clean_psb_amount(m.group(3))
+                
+                missing_flag = check_num.endswith("*")
+                check_num_clean = check_num.replace("*", "")
+                
+                if date_str and amt is not None:
+                    checks_register.append({
+                        "date": date_str,
+                        "check_number": check_num_clean,
+                        "amount": abs(amt),
+                        "missing_sequence_flag": missing_flag
+                    })
+                    
+    return transactions, checks_register
+
+
+def _validate_psb_extraction(
+    transactions: List[Transaction],
+    meta: Dict[str, Any]
+) -> List[str]:
+    errors = []
+    
+    op_bal = meta.get("opening_balance") or 0.0
+    cl_bal = meta.get("current_balance") or 0.0
+    tot_cred = meta.get("total_credits") or 0.0
+    tot_deb = meta.get("total_debits") or 0.0
+    cred_count = meta.get("credit_count") or 0
+    deb_count = meta.get("debit_count") or 0
+    
+    # Check totals
+    calc_credits = sum(t.credit for t in transactions if t.credit)
+    calc_debits = sum(t.debit for t in transactions if t.debit)
+    
+    if abs(calc_credits - tot_cred) > 0.05:
+        errors.append(f"Credits mismatch: header ${tot_cred} != extracted ${calc_credits:.2f}")
+    if abs(calc_debits - tot_deb) > 0.05:
+        errors.append(f"Debits mismatch: header ${tot_deb} != extracted ${calc_debits:.2f}")
+        
+    # Check counts
+    calc_cred_c = sum(1 for t in transactions if t.credit)
+    calc_deb_c = sum(1 for t in transactions if t.debit)
+    
+    if calc_cred_c != cred_count:
+        errors.append(f"Credit count mismatch: header {cred_count} != extracted {calc_cred_c}")
+    if calc_deb_c != deb_count:
+        errors.append(f"Debit count mismatch: header {deb_count} != extracted {calc_deb_c}")
+        
+    # Check chain
+    calc_end = op_bal + calc_credits - calc_debits
+    if abs(calc_end - cl_bal) > 0.05:
+        errors.append(f"Balance chain mismatch: {op_bal} + {calc_credits:.2f} - {calc_debits:.2f} = {calc_end:.2f} != {cl_bal}")
+        
+    return errors
 
 
 # ── SoFi Bank: signed amount with TYPE column ─────────────────────────────
@@ -1081,7 +1290,10 @@ def process_single_statement(
 
     if pdf_type == "digital":
         try:
-            rows = extract_with_pdfplumber(file_path)
+            if bank_hint == "peoplesouth-bank":
+                rows = extract_with_pdfplumber(file_path, force_words=True)
+            else:
+                rows = extract_with_pdfplumber(file_path)
             debug_extraction = compile_digital_extraction_debug(file_path)
             LOGGER.info(f"[{file_path.name}] pdfplumber → {len(rows)} rows")
         except Exception as e:
@@ -1216,6 +1428,39 @@ def process_single_statement(
             rows=rows,
             raw_text=raw_text,
             header_idx=detect_header_row(rows),
+        )
+
+    # PeoplesSouth Activity Statement
+    psb_transactions: List[Transaction] = []
+    checks_register: List[Dict] = []
+    if template and template.parser_format == "psb_activity":
+        psb_transactions, checks_register = _parse_psb_activity_rows(
+            rows, statement_year=stmt_year
+        )
+    if psb_transactions:
+        confidence = calculate_confidence([t.dict() for t in psb_transactions])
+        raw_text = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
+        validation_errors = _validate_psb_extraction(psb_transactions, preliminary_meta)
+        
+        # Add metadata variables to warnings if there are errors
+        warnings.extend(validation_errors)
+        
+        LOGGER.info(
+            "[%s] psb_activity -> %d transactions",
+            file_path.name,
+            len(psb_transactions),
+        )
+        return _statement_result(
+            filename=file_path.name,
+            transactions=psb_transactions,
+            confidence=confidence,
+            pdf_type=pdf_type,
+            warnings=warnings,
+            rows=rows,
+            raw_text=raw_text,
+            header_idx=detect_header_row(rows),
+            checks_register=checks_register,
+            validation_errors=validation_errors,
         )
 
     repeated_transactions: List[Transaction] = []

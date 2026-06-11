@@ -3,7 +3,7 @@ Extract statement-level metadata from OCR rows and parsed transactions.
 Tuned for US bank statements (BMO, Suncoast, U.S. Bank, Chase, etc.).
 """
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from app.models.schemas import Transaction
 
 
@@ -193,12 +193,75 @@ def _extract_current_balance(text: str, transactions: List[Transaction]) -> Opti
 
     # Fallback: last transaction balance
     for t in reversed(transactions):
-        if t.balance is not None:
+        if getattr(t, 'balance', None) is not None:
             try:
                 return float(t.balance)
             except (ValueError, TypeError):
                 continue
     return None
+
+def _extract_opening_balance(text: str) -> Optional[float]:
+    patterns = [
+        r"(?i)Beginning Balance\s*[:\s]*\$?\s*([\d,]+\.\d{2})",
+        r"(?i)Previous Balance\s*[:\s]*\$?\s*([\d,]+\.\d{2})",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            bal = _parse_balance_amount(m.group(1))
+            if bal is not None:
+                return bal
+    return None
+
+def _extract_statement_date(text: str) -> Optional[str]:
+    # Looking for "Date  1/30/26" in the header box
+    m = re.search(r"(?i)Date\s+(\d{1,2}/\d{1,2}/\d{2,4})", text)
+    if m:
+        from app.services.postprocessor import parse_date
+        return parse_date(m.group(1))
+    return None
+
+def _extract_period_dates(text: str) -> Tuple[Optional[str], Optional[str]]:
+    # Looking for "Statement Dates 1/01/26 thru  1/31/26"
+    m = re.search(r"(?i)Statement Dates\s+(\d{1,2}/\d{1,2}/\d{2,4})\s+thru\s+(\d{1,2}/\d{1,2}/\d{2,4})", text)
+    if m:
+        from app.services.postprocessor import parse_date
+        start = parse_date(m.group(1))
+        end = parse_date(m.group(2))
+        return start, end
+    return None, None
+
+def _extract_counts_and_totals(text: str) -> Tuple[int, float, int, float]:
+    credit_count = 0
+    total_credits = 0.0
+    debit_count = 0
+    total_debits = 0.0
+    
+    # "65 Credits  75,379.57"
+    m_cred = re.search(r"(\d+)\s+Credits\s+([\d,]+\.\d{2})", text, re.IGNORECASE)
+    if m_cred:
+        credit_count = int(m_cred.group(1))
+        cred_amt = _parse_balance_amount(m_cred.group(2))
+        if cred_amt is not None:
+            total_credits = cred_amt
+            
+    # "172 Debits  74,480.40"
+    m_deb = re.search(r"(\d+)\s+Debits\s+([\d,]+\.\d{2})", text, re.IGNORECASE)
+    if m_deb:
+        debit_count = int(m_deb.group(1))
+        deb_amt = _parse_balance_amount(m_deb.group(2))
+        if deb_amt is not None:
+            total_debits = deb_amt
+            
+    # "Service Charge  22.55"
+    m_sc = re.search(r"(?i)Service Charge\s+([\d,]+\.\d{2})", text)
+    if m_sc:
+        sc_amt = _parse_balance_amount(m_sc.group(1))
+        if sc_amt is not None:
+            total_debits = round(total_debits + sc_amt, 2)
+            debit_count += 1
+            
+    return credit_count, total_credits, debit_count, total_debits
 
 
 def extract_statement_metadata(
@@ -208,10 +271,21 @@ def extract_statement_metadata(
 ) -> Dict[str, Any]:
     del header_idx  # reserved for future use
     text = _flatten_text(rows)
+    
+    period_start, period_end = _extract_period_dates(text)
+    credit_count, total_credits, debit_count, total_debits = _extract_counts_and_totals(text)
 
     return {
         "bank_name": _detect_bank_name(text),
         "account_number": _extract_account_number(text),
         "customer_name": _extract_customer_name(text),
+        "statement_date": _extract_statement_date(text),
+        "period_start": period_start,
+        "period_end": period_end,
+        "opening_balance": _extract_opening_balance(text),
         "current_balance": _extract_current_balance(text, transactions),
+        "credit_count": credit_count,
+        "total_credits": total_credits,
+        "debit_count": debit_count,
+        "total_debits": total_debits,
     }

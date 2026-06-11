@@ -141,23 +141,31 @@ TEMPLATES: List[StatementTemplate] = [
         sample_files=["Navy_Federal_December_Business_Statement_.pdf"],
     ),
     StatementTemplate(
-        template_id="peoplessouth_signed_amount_v1",
-        bank_name="PeopleSouth Bank",
+        template_id="peoplessouth_activity_v1",
+        bank_name="PeoplesSouth Bank",
         layout_family="single_signed_amount_with_running_balance",
-        parser_format="signed_amount",
+        parser_format="psb_activity",
         bank_patterns=[
-            "peoplessouth",
-            "people south",
-            "sneads tire and oil",
+            "peoplessouth bank",
+            "business checking",
+            "member fdic",
+            "activity in date order"
         ],
-        header_keywords=["date", "description", "amount"],
+        header_keywords=["activity in date order", "date", "description", "amount", "balance"],
         amount_rules={
-            "negative_is_debit": True,
             "trailing_minus_is_debit": True,
-            "parentheses_is_debit": True,
-            "positive_is_credit": True,
+            "sc_suffix_marker": True,
+            "no_sign_is_credit": True,
         },
-        sample_files=["01-2026 SNEADS TIRE AND OIL LLC.pdf"],
+        stop_keywords=[
+            "member fdic notice",
+            "substitute image",
+            "virtual document",
+            "checks in number order",
+            "breakdown of total service charge",
+            "overdraft item fees year to date"
+        ],
+        sample_files=["01-2026 SNEADS TIRE AND OIL LLC.pdf", "02-2026 SNEADS TIRE AND OIL LLC.pdf", "03-2026 SNEADS TIRE AND OIL LLC (1).pdf"],
     ),
     StatementTemplate(
         template_id="peoplessouth_activity_statement_v1",
@@ -362,7 +370,7 @@ TEMPLATES: List[StatementTemplate] = [
 # and restrict to these candidates only.
 BANK_KEY_MAP: Dict[str, List[str]] = {
     "bancfirst":        ["bancfirst_sectioned_activity_v1"],
-    "peoplesouth-bank": ["peoplessouth_signed_amount_v1", "peoplessouth_activity_statement_v1"],
+    "peoplesouth-bank": ["peoplessouth_activity_v1", "peoplessouth_activity_statement_v1"],
     "citibank":         ["citi_streamlined_checking_v1"],
     "chase":            ["chase_repeated_blocks_v1", "chase_total_checking_sectioned_v1"],
     "bank-of-america":  ["bank_of_america_sectioned_v1"],

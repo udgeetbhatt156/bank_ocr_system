@@ -8,6 +8,8 @@ from typing import Dict, List, Optional, Tuple
 from fastapi import UploadFile
 from app.core.config import UPLOAD_DIR
 from app.models.schemas import StatementResult, Transaction
+from app.parsers import ParserBuilder, ParserContext, ParserNotFoundError
+from app.parsers.result import ParseResult
 from app.services.altered_statement_detector import detect_altered_statement
 from app.services.amount_utils import clean_amount
 from app.services.date_utils import parse_date
@@ -135,6 +137,63 @@ def _statement_result(
         alteration_signals=alteration_signals or {},
         rejected=rejected,
         rejection_reason=rejection_reason,
+    )
+
+
+def _statement_result_from_parse_result(
+    *,
+    filename: str,
+    parse_result: ParseResult,
+    pdf_type: Optional[str],
+    warnings: List[str],
+    rows: List[List[str]],
+    raw_text: str,
+    header_idx: Optional[int] = None,
+    debug_extraction: Optional[Dict] = None,
+) -> StatementResult:
+    transactions = deduplicate_transactions(parse_result.transactions)
+    combined_warnings = [
+        *warnings,
+        *parse_result.warnings,
+        *parse_result.validation_errors,
+    ]
+    _add_reconciliation_warnings(transactions, combined_warnings)
+    totals = sum_transaction_totals(transactions)
+    fallback_meta = extract_statement_metadata(
+        rows,
+        transactions,
+        header_idx=header_idx,
+    )
+    metadata = parse_result.metadata
+    bank_name = metadata.bank_name or fallback_meta["bank_name"]
+    account_number = metadata.account_number or fallback_meta["account_number"]
+    customer_name = (
+        metadata.customer_name
+        or metadata.account_holder
+        or fallback_meta["customer_name"]
+    )
+    current_balance = (
+        metadata.current_balance
+        if metadata.current_balance is not None
+        else metadata.closing_balance
+    )
+    if current_balance is None:
+        current_balance = fallback_meta["current_balance"]
+
+    return StatementResult(
+        filename=filename,
+        transactions=transactions,
+        confidence=parse_result.confidence,
+        pdf_type=pdf_type or "unknown",
+        warnings=combined_warnings,
+        raw_text=raw_text,
+        debug_extraction=debug_extraction or {},
+        bank_name=bank_name,
+        account_number=account_number,
+        customer_name=customer_name,
+        current_balance=current_balance,
+        total_debits=totals["total_debits"],
+        total_credits=totals["total_credits"],
     )
 
 
@@ -1167,6 +1226,68 @@ def process_single_statement(
             template.layout_family,
             template.parser_format,
         )
+
+    raw_text_preview = "\n".join(" | ".join(str(c) for c in r) for r in rows[:20])
+    context_bank_id = None
+    if bank_hint and bank_hint not in ("all", "auto"):
+        context_bank_id = bank_hint
+    elif template:
+        context_bank_id = template.bank_name
+    else:
+        context_bank_id = preliminary_meta.get("bank_name")
+
+    parser_context = ParserContext(
+        rows=rows,
+        pdf_type=pdf_type,
+        filename=file_path.name,
+        bank_id=context_bank_id,
+        bank_hint=bank_hint,
+        template_id=template.template_id if template else None,
+        parser_format=template.parser_format if template else None,
+        statement_year=stmt_year,
+        statement_month=stmt_month,
+        debug_extraction=debug_extraction,
+    )
+    try:
+        parser = ParserBuilder.get_parser(
+            context_bank_id,
+            parser_context,
+            template_id=parser_context.template_id,
+            parser_format=parser_context.parser_format,
+        )
+        parse_result = parser.parse()
+        if parse_result.transactions:
+            LOGGER.info(
+                "[%s] builder parser=%s bank=%s template=%s -> %d transactions",
+                file_path.name,
+                parse_result.parser_id,
+                parse_result.bank_id,
+                parse_result.template_id,
+                len(parse_result.transactions),
+            )
+            return _statement_result_from_parse_result(
+                filename=file_path.name,
+                parse_result=parse_result,
+                pdf_type=pdf_type,
+                warnings=warnings,
+                rows=rows,
+                raw_text=raw_text_preview,
+                header_idx=detect_header_row(rows),
+                debug_extraction=debug_extraction,
+            )
+        warnings.append(
+            f"Builder parser '{parser.parser_id}' returned no transactions; falling back"
+        )
+    except ParserNotFoundError:
+        LOGGER.info("[%s] no registered builder parser; using legacy flow", file_path.name)
+    except Exception as exc:
+        LOGGER.warning(
+            "[%s] builder parser failed; using legacy flow: %s",
+            file_path.name,
+            exc,
+            exc_info=True,
+        )
+        warnings.append(f"Builder parser failed; falling back to legacy flow: {exc}")
 
     # Citibank: fragmented multi-line
     citi_transactions: List[Transaction] = []

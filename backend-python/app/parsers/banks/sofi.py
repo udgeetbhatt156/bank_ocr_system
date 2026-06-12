@@ -56,14 +56,7 @@ class SofiParser(BaseParser):
 
     def extract_metadata(self) -> StatementMetadata:
         transactions = self.extract_transactions()
-        metadata = extract_statement_metadata(self.context.rows, transactions)
-        return StatementMetadata(
-            bank_id=self.context.bank_id or "SOFI",
-            bank_name=metadata.get("bank_name") or "SoFi Bank",
-            account_number=metadata.get("account_number"),
-            customer_name=metadata.get("customer_name"),
-            current_balance=metadata.get("current_balance"),
-        )
+        return self._extract_sofi_metadata(transactions)
 
     def extract_transactions(self) -> List[Transaction]:
         return self._parse_sofi_signed_type_rows(
@@ -73,14 +66,7 @@ class SofiParser(BaseParser):
 
     def parse(self) -> ParseResult:
         transactions = self.extract_transactions()
-        metadata = extract_statement_metadata(self.context.rows, transactions)
-        normalized_metadata = StatementMetadata(
-            bank_id=self.context.bank_id or "SOFI",
-            bank_name=metadata.get("bank_name") or "SoFi Bank",
-            account_number=metadata.get("account_number"),
-            customer_name=metadata.get("customer_name"),
-            current_balance=metadata.get("current_balance"),
-        )
+        normalized_metadata = self._extract_sofi_metadata(transactions)
         return ParseResult(
             metadata=normalized_metadata,
             transactions=transactions,
@@ -88,6 +74,169 @@ class SofiParser(BaseParser):
             parser_id=self.parser_id,
             bank_id=normalized_metadata.bank_id,
             template_id=self.context.template_id,
+        )
+
+    def _extract_sofi_metadata(
+        self,
+        transactions: List[Transaction],
+    ) -> StatementMetadata:
+
+        fallback = extract_statement_metadata(
+            self.context.rows,
+            transactions,
+        )
+
+        text = "\n".join(
+            " ".join(str(cell) for cell in row if str(cell).strip()).strip()
+            for row in self.context.rows
+            if row and any(str(cell).strip() for cell in row)
+        )
+
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+        # --------------------------------------------------
+        # Account Number
+        # --------------------------------------------------
+        account_number = fallback.get("account_number")
+
+        account_patterns = [
+            r"checking\s+account\s*[-:]?\s*([0-9*Xx-]{4,})",
+            r"account\s*(?:number|#)?\D{0,20}([0-9*Xx-]{4,})",
+        ]
+
+        for pattern in account_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                account_number = match.group(1).strip()
+                break
+
+        # --------------------------------------------------
+        # Customer Name
+        # --------------------------------------------------
+        customer_name = fallback.get("customer_name")
+
+        for idx, line in enumerate(lines):
+            if "primary account holder" not in line.lower():
+                continue
+
+            candidates = lines[idx + 1 : idx + 5]
+            for candidate in candidates:
+                candidate = candidate.strip()
+                if not candidate:
+                    continue
+
+                # Skip business names
+                if any(
+                    word in candidate.upper()
+                    for word in ["LLC", "INC", "CORP", "LTD"]
+                ):
+                    continue
+
+                # Stop when next section starts
+                if any(
+                    keyword in candidate.lower()
+                    for keyword in [
+                        "member since",
+                        "address",
+                        "account number",
+                        "statement period",
+                    ]
+                ):
+                    continue
+
+                # Remove address fragments such as:
+                # Jason Hansen #228
+                candidate = re.sub(
+                    r"\s+#\d+\b.*$",
+                    "",
+                    candidate,
+                ).strip()
+
+                # Must look like a person name
+                if re.match(
+                    r"^[A-Za-z]+(?:[\s-][A-Za-z]+)+$",
+                    candidate,
+                ):
+                    customer_name = candidate
+                    break
+
+            if customer_name:
+                break
+
+        # --------------------------------------------------
+        # Statement Period
+        # --------------------------------------------------
+        statement_start_date = None
+        statement_end_date = None
+
+        period_patterns = [
+            r"(?:monthly\s+)?statement\s+period\s*[:\s]*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})"
+            r"\s*(?:-|to|through|thru)\s*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})",
+
+            r"(?:monthly\s+)?statement\s+period\s*[:\s]*"
+            r"(\d{1,2}/\d{1,2}/\d{2,4})"
+            r"\s*(?:-|to|through|thru)\s*"
+            r"(\d{1,2}/\d{1,2}/\d{2,4})",
+        ]
+
+        for pattern in period_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+
+            if match:
+                statement_start_date = parse_date(
+                    match.group(1),
+                    statement_year=self.context.statement_year,
+                )
+
+                statement_end_date = parse_date(
+                    match.group(2),
+                    statement_year=self.context.statement_year,
+                )
+
+                break
+
+        # --------------------------------------------------
+        # Current / Closing Balance
+        # --------------------------------------------------
+        current_balance = fallback.get("current_balance")
+
+        balance_patterns = [
+            r"current\s+balance\D{0,50}(\$?\s*[\d,]+\.\d{2})",
+            r"ending\s+balance\D{0,50}(\$?\s*[\d,]+\.\d{2})",
+            r"closing\s+balance\D{0,50}(\$?\s*[\d,]+\.\d{2})",
+        ]
+
+        for pattern in balance_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+
+            if match:
+                current_balance = clean_amount(match.group(1))
+                break
+
+        # fallback from transaction balances
+        if current_balance is None and transactions:
+
+            balances = [
+                txn.balance
+                for txn in transactions
+                if txn.balance is not None
+            ]
+
+            if balances:
+                current_balance = balances[-1]
+
+        return StatementMetadata(
+            bank_id="SOFI",
+            bank_name="SoFi Bank",
+            account_number=account_number,
+            customer_name=customer_name,
+            account_holder=customer_name,
+            statement_start_date=statement_start_date,
+            statement_end_date=statement_end_date,
+            current_balance=current_balance,
+            closing_balance=current_balance,
         )
 
     def _parse_sofi_amount_balance(

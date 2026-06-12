@@ -326,16 +326,42 @@ class PeopleSouthParser(SignedAmountParser):
             checks.append(line)
         return checks
 
-    def _extract_customer_block(self, lines: List[str]) -> Tuple[Optional[str], Optional[str]]:
+    # def _extract_customer_block(self, lines: List[str]) -> Tuple[Optional[str], Optional[str]]:
+    #     for idx, line in enumerate(lines[:80]):
+    #         if re.fullmatch(r"\d{7}", line.strip()):
+    #             name = lines[idx + 1].strip() if idx + 1 < len(lines) else None
+    #             street = lines[idx + 3].strip() if idx + 3 < len(lines) else ""
+    #             city = lines[idx + 4].strip() if idx + 4 < len(lines) else ""
+    #             address = " ".join(part for part in [street, city] if part)
+    #             return name, address or None
+    #     return None, None
+    def _extract_customer_block(
+        self,
+        lines: List[str]
+    ) -> Tuple[Optional[str], Optional[str]]:
+
+    # Business statements
+        for line in lines[:30]:
+            match = re.search(
+                r"^(.*?)\s+Date\s+\d{1,2}/\d{1,2}/\d{2,4}",
+                line.strip(),
+                re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip(), None
+
+    # Existing personal-account logic
         for idx, line in enumerate(lines[:80]):
             if re.fullmatch(r"\d{7}", line.strip()):
                 name = lines[idx + 1].strip() if idx + 1 < len(lines) else None
-                street = lines[idx + 2].strip() if idx + 2 < len(lines) else ""
-                city = lines[idx + 3].strip() if idx + 3 < len(lines) else ""
-                address = " ".join(part for part in [street, city] if part)
+                street = lines[idx + 3].strip() if idx + 3 < len(lines) else ""
+                city = lines[idx + 4].strip() if idx + 4 < len(lines) else ""
+                address = " ".join(
+                    part for part in [street, city] if part
+            )
                 return name, address or None
-        return None, None
 
+        return None, None
     def _extract_account_number(self, text: str) -> Optional[str]:
         match = re.search(r"Account\s+Number\s*[:\s]*([0-9]{6,})", text, re.IGNORECASE)
         return match.group(1) if match else None

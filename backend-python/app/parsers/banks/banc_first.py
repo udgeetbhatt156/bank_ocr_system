@@ -41,7 +41,7 @@ _SKIP_PATTERNS = [
 ]
 
 # Add these at the top of your file with the other compiled regexes
-_SEQUENCE_CODE_RE = re.compile(r"^\d+\s+\*\d+$")
+_SEQUENCE_CODE_RE = re.compile(r"^\d \*\d{7}$")
 _ADDRESS_SKIP_RE = re.compile(
     r"^(PO BOX|P\.O\. BOX|\d{3,5}\s+\w|\(\d{3}\)|\d{5}(-\d{4})?$)",
     re.IGNORECASE
@@ -287,6 +287,63 @@ class BancFirstParser(BaseParser):
             "running_balance": None,
         })
 
+    def _extract_customer_block(
+        self, lines: List[str]
+    ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        customer: Optional[str] = None
+        co_customer: Optional[str] = None
+        dba: Optional[str] = None
+
+    # ── NEW: find the sequence-code anchor first ──────────────────────────
+    # BancFirst puts the customer block immediately AFTER a line like
+    # "3 *0009741" or "5 *0009551".  We locate that anchor so we don't
+    # accidentally pick up boilerplate that appears BEFORE it.
+        anchor_idx = None
+        for i, line in enumerate(lines[:60]):
+            if _SEQUENCE_CODE_RE.match(line.strip()):
+                anchor_idx = i
+                break          # take the FIRST match; there may be duplicates
+
+    # If no anchor found, fall back to scanning from the top (old behaviour)
+        scan_start = (anchor_idx + 1) if anchor_idx is not None else 0
+        for line in lines[scan_start : scan_start + 20]:   # tight window after anchor
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if _SEQUENCE_CODE_RE.match(stripped):           # another seq code line
+                continue
+            if _HEADER_BOILERPLATE_RE.match(stripped):      # "Dir 1 251 13", etc.
+                continue
+            if _ADDRESS_SKIP_RE.match(stripped):            # "PO BOX ...", zip lines
+                break                                       # address = end of block
+            if stripped.startswith("(") and stripped.endswith(")"):  # phone
+                continue
+            if re.match(r"^\d", stripped):                  # digit-leading line
+                continue
+            lower = stripped.lower()
+            if any(b in lower for b in _CUSTOMER_BLOCKLIST):
+                continue
+            if len(stripped) < 4:
+                continue
+
+        # --- DBA line ---
+            dba_match = _DBA_RE.match(stripped)
+            if dba_match:
+                if dba is None:
+                    dba = dba_match.group(1).strip()
+                break   # after DBA only address follows → stop
+            if customer is None:
+                customer = stripped
+                continue
+
+            if co_customer is None:
+                co_customer = stripped
+                continue
+
+        # Both names filled and no DBA yet → next meaningful line is DBA or address
+            break
+
+        return customer, co_customer, dba
     def _parse_checks_row(self, line: str, statement_month: Optional[int], statement_year: Optional[int], transactions: List[Transaction], checks: List[Dict[str, Any]], raw_txns: List[Dict[str, Any]]):
         if self._should_skip_line(line):
             return
@@ -325,56 +382,7 @@ class BancFirstParser(BaseParser):
                     "running_balance": None,
                 })
 
-    def _extract_customer_block(
-        self, lines: List[str]
-    ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        customer: Optional[str] = None
-        co_customer: Optional[str] = None
-        dba: Optional[str] = None
-
-        for line in lines[:60]:
-            stripped = line.strip()
-            if not stripped:
-                continue
-
-            # --- Hard skips ---
-            if _SEQUENCE_CODE_RE.match(stripped):          # "5 *0009551"
-                continue
-            if _HEADER_BOILERPLATE_RE.match(stripped):     # "Dir 1 251 13", "8001-00000 *8001*", etc.
-                continue
-            if _ADDRESS_SKIP_RE.match(stripped):           # "PO BOX ...", phone, zip
-                continue
-            if stripped.startswith("(") and stripped.endswith(")"):  # phone "(405) 454-6216"
-                continue
-            if re.match(r"^\d", stripped):                 # any line starting with a digit
-                continue
-            lower = stripped.lower()
-            if any(b in lower for b in _CUSTOMER_BLOCKLIST):
-                continue
-            if len(stripped) < 4:
-                continue
-
-            # --- DBA line (can appear before or after co-customer) ---
-            dba_match = _DBA_RE.match(stripped)
-            if dba_match:
-                if dba is None:
-                    dba = dba_match.group(1).strip()
-                # after DBA there's only address lines left, stop
-                break
-
-            # --- Name capture in order ---
-            if customer is None:
-                customer = stripped
-                continue
-
-            if co_customer is None:
-                co_customer = stripped
-                continue
-
-            # If we've filled both names and hit something else, stop
-            break
-
-        return customer, co_customer, dba
+    
 
     def _extract_account_number(self, text: str) -> Optional[str]:
         match = re.search(r"ACCOUNT\s+NUMBER\s*[\n\r]+.*?([0-9]{10})", text, re.IGNORECASE)

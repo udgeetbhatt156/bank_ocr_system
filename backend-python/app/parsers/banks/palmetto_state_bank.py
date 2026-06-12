@@ -16,14 +16,13 @@ from app.services.postprocessor import calculate_confidence
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
 _BANK_NAME = "Palmetto State Bank"
 _BANK_ID = "PALMETTO_STATE_BANK"
 _TEMPLATE_ID = "palmetto_state_bank_v1"
 
 # Header line that marks the start of the transaction table on every page
 _TABLE_HEADER_RE = re.compile(
-    r"DESCRIPTION\s+DEBITS\s+CREDITS\s+DATE\s+BALANCE",
+    r"(?:DESCRIPTION|DEBITS|DATE).{5,40}BALANCE",
     re.IGNORECASE,
 )
 
@@ -57,7 +56,7 @@ _CLOSING_BAL_RE = re.compile(
 # Account number + statement-end date from page header
 # e.g. "ACCOUNT:    84014753  12/15/2025"
 _ACCOUNT_HEADER_RE = re.compile(
-    r"ACCOUNT\s*:\s*(\d{6,12})\s+(\d{1,2}/\d{1,2}/\d{2,4})",
+    r"ACCOUNT\s*:?\s*(\d{6,12})\s+(\d{1,2}/\d{1,2}/\d{2,4})",
     re.IGNORECASE,
 )
 
@@ -75,7 +74,7 @@ _TOTAL_DEBITS_RE = re.compile(
 # and ends with a BALANCE figure.
 # We treat any line that contains a date-like token + at least one amount as a data line.
 _DATA_LINE_RE = re.compile(
-    r"(\d{1,2}/\d{1,2}/\d{2,4})\s+([\d,]+\.\d{2})\s*$"
+    r"(\d{1,2}/\d{1,2}/\d{2,4})\s+([\(+\-]?\$?[\d,]+\.\d{2}\)?)(?:\s*|\s+[^0-9a-zA-Z]*)$"
 )
 
 # Blocklisted strings that must never be used as customer_name
@@ -172,10 +171,10 @@ def _parse_data_line(line: str, statement_year: Optional[int] = None) -> Tuple[
     # --- Regex fallback: right-anchored ---
     # Pattern: ... [optional debit] [optional credit]  DATE  BALANCE
     m = re.search(
-        r"(?:([\d,]+\.\d{2})\s+)?"   # optional debit or credit (first amount)
-        r"(?:([\d,]+\.\d{2})\s+)?"   # optional second amount
-        r"(\d{1,2}/\d{1,2}/\d{2,4})\s+"  # date
-        r"([\d,]+\.\d{2})\s*$",      # balance
+        r"(?:([\(+\-]?\$?[\d,]+\.\d{2}\)?)\s+)?"   # optional debit or credit (first amount)
+        r"(?:([\(+\-]?\$?[\d,]+\.\d{2}\)?)\s+)?"   # optional second amount
+        r"(\d{1,2}/\d{1,2}/\d{2,4})\s+"            # date
+        r"([\(+\-]?\$?[\d,]+\.\d{2}\)?)(?:\s*|\s+[^0-9a-zA-Z]*)$",  # balance
         line,
     )
     if not m:
@@ -208,19 +207,10 @@ def _parse_data_line(line: str, statement_year: Optional[int] = None) -> Tuple[
     return date_val, debit_val, credit_val, balance_val
 
 
-# ---------------------------------------------------------------------------
-# Parser class
-# ---------------------------------------------------------------------------
-
 class PalmettoStateBankParser(BaseParser):
     """Parser for Palmetto State Bank fixed-width / scanned-OCR statements."""
 
     parser_id = _TEMPLATE_ID
-
-    # ------------------------------------------------------------------
-    # Public API (BaseParser interface)
-    # ------------------------------------------------------------------
-
     def extract_metadata(self) -> StatementMetadata:
         transactions = self.extract_transactions()
         return self._extract_palmetto_metadata(transactions)
@@ -322,7 +312,6 @@ class PalmettoStateBankParser(BaseParser):
             bank_name=_BANK_NAME,
             account_number=account_number,
             account_type="Checking",
-            account_name=account_name,
             customer_name=customer_name,
             account_holder=customer_name,
             statement_start_date=statement_start_date,
@@ -330,10 +319,10 @@ class PalmettoStateBankParser(BaseParser):
             opening_balance=opening_balance,
             current_balance=closing_balance,
             closing_balance=closing_balance,
-            total_credits_count=total_credits_count,
-            total_credits_amount=total_credits_amount,
-            total_debits_count=total_debits_count,
-            total_debits_amount=total_debits_amount,
+            credit_count=total_credits_count,
+            total_credits=total_credits_amount,
+            debit_count=total_debits_count,
+            total_debits=total_debits_amount,
         )
 
     def _extract_names(
@@ -486,6 +475,11 @@ class PalmettoStateBankParser(BaseParser):
                 # Keep in_table = True so parsing continues on the next page
                 continue
 
+            # Auto-start table if we encounter a perfect data line before a header
+            if not in_table and _is_data_line(line):
+                in_table = True
+                flush_buffer_without_data()
+
             if not in_table:
                 continue
 
@@ -536,9 +530,6 @@ class PalmettoStateBankParser(BaseParser):
         return transactions
 
 
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
 
 register_parser(_BANK_ID, PalmettoStateBankParser)
 register_template_parser(_TEMPLATE_ID, PalmettoStateBankParser)

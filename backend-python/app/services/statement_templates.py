@@ -260,6 +260,35 @@ TEMPLATES: List[StatementTemplate] = [
             "Citi_XLRM_LLC_March_27_to_April_24_2026.pdf",
         ],
     ),
+    StatementTemplate(
+        template_id="palmetto_state_bank_v1",
+        bank_name="Palmetto State Bank",
+        layout_family="scanned_ocr_table",
+        parser_format="standard",
+        bank_patterns=[
+            "palmetto state bank",
+            "palmetto",
+        ],
+        header_keywords=[
+            "description",
+            "debits",
+            "credits",
+            "date",
+            "balance",
+        ],
+        amount_rules={},
+        stop_keywords=[
+            "balance this statement",
+            "total days in statement period",
+            "your checks sequenced",
+        ],
+        sample_files=[
+            "December statement  (3).pdf",
+            "Feb. statements  (5).pdf",
+            "Jan. Statements  (3).pdf",
+            "March statement  (3).pdf",
+        ],
+    ),
     # Wells Fargo — Check# / Credits / Debits / Ending Daily Balance
     StatementTemplate(
         template_id="wells_fargo_business_checking_v1",
@@ -369,6 +398,7 @@ BANK_KEY_MAP: Dict[str, List[str]] = {
     "sofi-bank":        ["sofi_digital_activity_v1"],
     "navy-federal":     ["genreich_signed_amount_v1", "navy_federal_scanned_v1"],
     "wells-fargo":      ["wells_fargo_business_checking_v1"],
+    "palmetto-state-bank": ["palmetto_state_bank_v1"],
 }
 
 # Fast O(1) lookup index: template_id → StatementTemplate

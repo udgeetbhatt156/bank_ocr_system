@@ -2,5 +2,7 @@
 
 from app.parsers.banks.peoplessouth import PeopleSouthParser
 from app.parsers.banks.sofi import SofiParser
+from app.parsers.banks.palmetto_state_bank import PalmettoStateBankParser
+from app.parsers.banks.banc_first import BancFirstParser
 
-__all__ = ["PeopleSouthParser", "SofiParser"]
+__all__ = ["PeopleSouthParser", "SofiParser", "PalmettoStateBankParser", "BancFirstParser"]

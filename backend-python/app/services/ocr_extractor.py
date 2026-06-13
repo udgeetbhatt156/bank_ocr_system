@@ -20,13 +20,18 @@ def _get_paddle_ocr():
         attempts = [
             {
                 "lang": "en",
+                "ocr_version": "PP-OCRv4",
                 "use_doc_orientation_classify": False,
                 "use_doc_unwarping": False,
                 "use_textline_orientation": False,
             },
-            {"lang": "en"},
             {
                 "lang": "en",
+                "ocr_version": "PP-OCRv4",
+            },
+            {
+                "lang": "en",
+                "ocr_version": "PP-OCRv4",
                 "use_angle_cls": False,
                 "use_gpu": False,
                 "show_log": False,

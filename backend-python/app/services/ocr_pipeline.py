@@ -2,6 +2,8 @@ import logging
 import re
 import uuid
 from pathlib import Path
+import os
+import concurrent.futures
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -1152,14 +1154,22 @@ def process_single_statement(
         try:
             images = preprocess_scanned_pdf(file_path, dpi=200)
             debug_pages = []
-            for page_number, img in enumerate(images, start=1):
-                ocr_rows, debug_page = extract_ocr_rows_with_debug(
-                    img,
-                    page_number=page_number,
-                )
-                debug_pages.append(debug_page)
-                if ocr_rows:
-                    rows.extend(ocr_rows)
+            
+            # Set threads to 1 to prevent CPU thrashing during multiprocessing
+            os.environ["OMP_NUM_THREADS"] = "1"
+            os.environ["MKL_NUM_THREADS"] = "1"
+            
+            max_workers = min(4, os.cpu_count() or 4, len(images))
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(extract_ocr_rows_with_debug, img, page_number=page_number)
+                    for page_number, img in enumerate(images, start=1)
+                ]
+                for future in futures:
+                    ocr_rows, debug_page = future.result()
+                    debug_pages.append(debug_page)
+                    if ocr_rows:
+                        rows.extend(ocr_rows)
             debug_extraction = {
                 "source": "paddleocr",
                 "coordinate_system": "image_pixels_top_left",

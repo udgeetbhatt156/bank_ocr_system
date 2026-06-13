@@ -23,12 +23,14 @@ _SKIP_LINE_PATTERNS = [
     r"member\s+fdic\s+notice",
     r"business\s+checking\s+\d+\s+\(continued\)",
     r"activity\s+in\s+date\s+order",
-    r"date\s+description\s+amount",
+    r"date\s+description.*",
     r"\*\s+denotes\s+missing\s+check\s+numbers",
     r"^\s*\*+\s*$",
     r"breakdown\s+of\s+total\s+service\s+charge\s+transaction",
     r"overdraft\s+item\s+fees\s+year\s+to\s+date",
     r"substitute\s+image\s*/\s*virtual\s+document",
+    r"daily\s+balance\s+summary",
+    r"service\s+charge\s+breakdown",
 ]
 
 
@@ -52,14 +54,16 @@ class PeopleSouthParser(SignedAmountParser):
 
         structured_transactions = []
         for idx, (transaction, transaction_type) in enumerate(transaction_rows, start=1):
+            is_debit = transaction.debit is not None
             structured_transactions.append({
                 "seq": idx,
                 "date": transaction.date,
-                "description": transaction.description,
-                "debit": transaction.debit,
-                "credit": transaction.credit,
-                "balance": transaction.balance,
-                "transaction_type": transaction_type,
+                "description_full": transaction.description,
+                "transaction_type": "DEBIT" if is_debit else "CREDIT",
+                "amount": transaction.debit if is_debit else transaction.credit,
+                "direction": "DR" if is_debit else "CR",
+                "running_balance": transaction.balance,
+                "category": transaction_type,
             })
 
         structured_output = {
@@ -142,27 +146,81 @@ class PeopleSouthParser(SignedAmountParser):
         )
 
     def _extract_activity_transactions(self) -> Tuple[List[Transaction], List[Tuple[Transaction, str]]]:
+        metadata = self._extract_peoplessouth_metadata()
+        customer_name = metadata.customer_name.lower() if metadata.customer_name else ""
+        
         lines = self._activity_lines()
         transactions: List[Transaction] = []
         transaction_rows: List[Tuple[Transaction, str]] = []
+
+        blocks = []
+        current_block = []
 
         for line in lines:
             if self._should_skip_line(line):
                 continue
 
-            date_match = _DATE_START_RE.match(line)
-            if not date_match:
-                if transactions:
-                    continuation = self._clean_continuation(line)
-                    if continuation:
-                        previous = transactions[-1]
-                        previous.description = (
-                            f"{previous.description} {continuation}".strip()
-                        )
+            if _DATE_START_RE.match(line):
+                if current_block:
+                    blocks.append(current_block)
+                current_block = [line]
+            else:
+                if current_block:
+                    current_block.append(line)
+
+        if current_block:
+            blocks.append(current_block)
+
+        for block in blocks:
+            # Clean up page headers that got appended to the end of the previous block due to page breaks
+            marker_idx = -1
+            for idx, line in enumerate(block):
+                if idx == 0:
+                    continue
+                if re.search(r"(?i)\bpage\s+\d+\b", line) or \
+                   re.search(r"(?i)dat\s*e\s+\d{1,2}/\d{1,2}", line) or \
+                   re.search(r"(?i)pri\s*mary\s+account", line) or \
+                   re.search(r"(?i)business\s+checking", line) or \
+                   re.search(r"(?i)usine\s+ss\s+c\s*hecking", line) or \
+                   re.search(r"(?i)activity\s+in\s+date", line) or \
+                   re.search(r"(?i)ate\s+description", line) or \
+                   re.search(r"(?i)\bcontinued\b", line):
+                    marker_idx = idx
+                    break
+
+            if marker_idx != -1:
+                truncate_idx = marker_idx
+                # Search backwards for the customer name to drop the name and address lines too
+                found_name_idx = -1
+                for j in range(max(1, marker_idx - 4), marker_idx):
+                    line_lower = block[j].lower()
+                    if customer_name and len(line_lower) > 5:
+                        import difflib
+                        if difflib.SequenceMatcher(None, line_lower, customer_name).ratio() > 0.6:
+                            found_name_idx = j
+                            break
+                if found_name_idx != -1:
+                    truncate_idx = found_name_idx
+                else:
+                    # Fallback: drop lines before marker if they look like a state/zip code
+                    for j in range(max(1, marker_idx - 3), marker_idx):
+                        if re.search(r"(?i)\b(?:fl|ga|al)\s+\d{5}", block[j]):
+                            truncate_idx = min(truncate_idx, j)
+                
+                block = block[:truncate_idx]
+
+            if not block:
                 continue
 
-            raw_date, remainder = date_match.groups()
-            money_matches = list(_MONEY_RE.finditer(remainder))
+            date_match = _DATE_START_RE.match(block[0])
+            if not date_match:
+                continue
+
+            raw_date, first_line_remainder = date_match.groups()
+            
+            full_text = first_line_remainder + " " + " ".join(block[1:])
+            money_matches = list(_MONEY_RE.finditer(full_text))
+            
             if len(money_matches) < 2:
                 continue
 
@@ -172,13 +230,16 @@ class PeopleSouthParser(SignedAmountParser):
             raw_balance = balance_match.group()
             amount = self._parse_money(raw_amount)
             balance = self._parse_money(raw_balance)
+            
             if amount is None or balance is None:
                 continue
 
-            description = remainder[:amount_match.start()].strip()
+            desc_part1 = full_text[:amount_match.start()].strip()
+            desc_part2 = full_text[balance_match.end():].strip()
+            description = f"{desc_part1} {desc_part2}".strip()
             description = self._normalize_description(description)
             if not description:
-                description = remainder.strip()
+                description = full_text.strip()
 
             is_debit = self._is_debit_amount(raw_amount)
             debit = abs(amount) if is_debit else None
@@ -298,14 +359,22 @@ class PeopleSouthParser(SignedAmountParser):
         start = 0
         end = len(lines)
         for idx, line in enumerate(lines):
-            if re.search(r"activity\s+in\s+date\s+order", line, re.IGNORECASE):
+            compact = re.sub(r"\s+", "", line.lower())
+            if "activityindateorder" in compact:
                 start = idx + 1
                 break
         for idx in range(start, len(lines)):
-            if re.search(r"checks\s+in\s+number\s+order", lines[idx], re.IGNORECASE):
+            compact = re.sub(r"\s+", "", lines[idx].lower())
+            if "checksinnumber" in compact or "numberorder" in compact:
                 end = idx
                 break
-            if re.search(r"substitute\s+image\s*/\s*virtual\s+document", lines[idx], re.IGNORECASE):
+            if "substituteimage" in compact or "virtualdocument" in compact:
+                end = idx
+                break
+            if "dailybalancesummary" in compact:
+                end = idx
+                break
+            if "servicechargebreakdown" in compact:
                 end = idx
                 break
         return lines[start:end]
@@ -314,14 +383,16 @@ class PeopleSouthParser(SignedAmountParser):
         lines = self._lines()
         start = None
         for idx, line in enumerate(lines):
-            if re.search(r"checks\s+in\s+number\s+order", line, re.IGNORECASE):
+            compact = re.sub(r"\s+", "", line.lower())
+            if "checksinnumber" in compact or "numberorder" in compact:
                 start = idx + 1
                 break
         if start is None:
             return []
         checks = []
         for line in lines[start:]:
-            if re.search(r"substitute\s+image\s*/\s*virtual\s+document", line, re.IGNORECASE):
+            compact = re.sub(r"\s+", "", line.lower())
+            if "substituteimage" in compact or "virtualdocument" in compact:
                 break
             checks.append(line)
         return checks
@@ -441,7 +512,29 @@ class PeopleSouthParser(SignedAmountParser):
         return raw.endswith("-") or raw.endswith("-SC")
 
     def _normalize_description(self, description: str) -> str:
-        return re.sub(r"\s+", " ", description).strip()
+        description = re.sub(r"\*+", "", description)
+        description = re.sub(r"\s+", " ", description).strip()
+        
+        # Aggressive spacing fixes for known words that frequently get split by OCR
+        description = re.sub(r"(?i)\bB\s*I\s*L\s*L?\s*N\s*G\b", "BILLNG", description)
+        description = re.sub(r"(?i)\bM\s*E\s*R\s*C\s*H\b", "MERCH", description)
+        description = re.sub(r"(?i)\bB\s*A\s*N\s*K\s*C\s*A\s*R\s*D\b", "BANKCARD", description)
+        description = re.sub(r"(?i)\bC\s*C\s*D\b", "CCD", description)
+        description = re.sub(r"(?i)\bC\s*H\s*E\s*C\s*K\b", "CHECK", description)
+        description = re.sub(r"(?i)\bD\s*E\s*P\s*O\s*S\s*I\s*T\b", "DEPOSIT", description)
+        description = re.sub(r"(?i)\bT\s*r\s*a\s*n\s*s\s*f\s*e\s*r\b", "Transfer", description)
+        description = re.sub(r"(?i)\bf\s*r\s*o\s*m\b", "from", description)
+        description = re.sub(r"(?i)\bP\s*O\s*S\s+D\s*E\s*B\b", "POS DEB", description)
+        description = re.sub(r"(?i)\bD\s*B\s*T\s+C\s*R\s*D\b", "DBT CRD", description)
+        description = re.sub(r"(?i)\bS\s*e\s*r\s*v\s*i\s*c\s*e\s*C\s*h\s*a\s*r\s*g\s*e\b", "Service Charge", description)
+        
+        description = description.strip()
+        
+        # If the description is purely a 3-6 digit number, the OCR dropped the word "CHECK"
+        if re.fullmatch(r"\d{3,6}", description):
+            description = f"CHECK {description}"
+            
+        return description
 
     def _clean_continuation(self, line: str) -> str:
         if self._should_skip_line(line):
@@ -458,25 +551,42 @@ class PeopleSouthParser(SignedAmountParser):
         credit: Optional[float],
     ) -> str:
         upper = description.upper()
-        if "SERVICE CHARGE" in upper:
-            return "service_charge"
-        if "OVERDRAFT" in upper:
-            return "overdraft_fee"
-        if upper.startswith("CHECK") or "CHECK NO" in upper:
-            return "check"
-        if "TRANSFER" in upper:
-            return "transfer"
+        if credit is not None and ("NET SETLMT MERCH BANKCARD" in upper or "CCD" in upper):
+            return "CARD_SALES_REVENUE"
+        if "RETRO ADVANCE INC" in upper or "FUNDING METRICS LLC" in upper:
+            return "MERCHANT_ADVANCE_IN"
+        if "TRANSFER FROM" in upper and credit is not None:
+            return "INTERNAL_TRANSFER_IN"
+        if "TRANSFER FROM" in upper or "TRANSFER TO" in upper or "TRANSFER REQUESTED" in upper:
+            return "INTERNAL_TRANSFER_OUT"
+        if "DEPOSIT" in upper and "WIRE" not in upper:
+            return "CASH_DEPOSIT"
+        if "ATM W/D" in upper or "OTC DEBIT" in upper:
+            return "ATM_WITHDRAWAL"
+        if "POS DEB" in upper or "DBT CRD" in upper or "DEBIT CARD" in upper:
+            return "POS_DEBIT"
         if "POS CRE" in upper:
-            return "pos_credit"
-        if "LOAN PAY" in upper:
-            return "loan_payment"
-        if "DBT CRD" in upper or "DEBIT" in upper:
-            return "card_debit"
-        if credit is not None:
-            return "credit"
-        if debit is not None:
-            return "debit"
-        return "unknown"
+            return "POS_CREDIT"
+        if "CHECK" in upper:
+            return "CHECK_WRITTEN"
+        if "9547435581 RETRO ADVANCE" in upper:
+            return "MCA_REPAYMENT"
+        if "LOAN PAY" in upper or "TRANSFER TO LOAN" in upper or "ACCT NO. 36303739" in upper:
+            return "LOAN_PAYMENT"
+        if "PREM COLL GEICO" in upper or "INSURANCE GEICO MARINE" in upper:
+            return "INSURANCE"
+        if "FLA DEPT REVENUE" in upper or "C38" in upper or "C01" in upper:
+            return "TAXES"
+        if "PAYMENT ATT" in upper or "PAYMENTS DISCOVER" in upper or "IPAY BILL PAY" in upper:
+            return "UTILITIES_TELECOM"
+        if any(f in upper for f in ["WIRE TRANSFER FEE", "SERVICE CHARGE", "OVERDRAFT ITEM FEE", "RETURN ITEM FEE", "W/D SVC"]) or ("BILLNG MERCH BANKCARD" in upper and debit is not None):
+            return "BANKING_FEE"
+        if "WIRE" in upper and credit is not None:
+            return "WIRE_TRANSFER_IN"
+        if "PAYMENTS MITCHELL REPAIR" in upper or "DEBIT FDM001" in upper:
+            return "VENDOR_PAYMENT"
+            
+        return "OTHER"
 
 
 register_parser("PEOPLESOUTH", PeopleSouthParser)

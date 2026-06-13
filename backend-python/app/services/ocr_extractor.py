@@ -17,7 +17,6 @@ def _get_paddle_ocr():
     global paddle_ocr
     if paddle_ocr is None:
         from paddleocr import PaddleOCR
-
         attempts = [
             {
                 "lang": "en",
@@ -46,7 +45,7 @@ def _get_paddle_ocr():
 
 
 def _extract_text_from_v2_line(line: Any) -> Tuple[Optional[str], Optional[List], Optional[float]]:
-    if not line or len(line) < 2:
+    if line is None or len(line) < 2:
         return None, None, None
     box = line[0]
     payload = line[1]
@@ -117,19 +116,29 @@ def _box_bounds(box: Any) -> Dict[str, Optional[float]]:
 
 def _normalize_ocr_lines(result: Any) -> List[Dict[str, Any]]:
     lines: List[Dict[str, Any]] = []
+    lines: List[Dict[str, Any]] = []
 
-    for page in result or []:
+    if isinstance(result, np.ndarray):
+        result = result.tolist()
+    for page in (result if result is not None else []):
         data = _result_to_dict(page)
         if data:
-            texts = data.get("rec_texts") or data.get("texts") or []
-            scores = data.get("rec_scores") or data.get("scores") or []
-            boxes = (
-                data.get("rec_polys")
-                or data.get("rec_boxes")
-                or data.get("dt_polys")
-                or data.get("boxes")
-                or []
-            )
+            texts = data.get("rec_texts")
+            if texts is None or (isinstance(texts, np.ndarray) and texts.size == 0) or not len(texts):
+                texts = data.get("texts") or []
+            scores = data.get("rec_scores")
+            if scores is None or (isinstance(scores, np.ndarray) and scores.size == 0) or not len(scores):
+                scores = data.get("scores") or []
+            
+            boxes = data.get("rec_polys")
+            if boxes is None or (isinstance(boxes, np.ndarray) and boxes.size == 0) or not len(boxes):
+                boxes = data.get("rec_boxes")
+            if boxes is None or (isinstance(boxes, np.ndarray) and boxes.size == 0) or not len(boxes):
+                boxes = data.get("dt_polys")
+            if boxes is None or (isinstance(boxes, np.ndarray) and boxes.size == 0) or not len(boxes):
+                boxes = data.get("boxes")
+            if boxes is None or (isinstance(boxes, np.ndarray) and boxes.size == 0) or not len(boxes):
+                boxes = []
             for idx, text in enumerate(texts):
                 text = str(text).strip()
                 if not text:
@@ -185,8 +194,11 @@ def ocr_lines_to_rows(lines: List[Dict[str, Any]]) -> List[List[str]]:
     for idx, group in enumerate(grouped):
         labels = [(item["text"].strip(), item["x"]) for item in sorted(group, key=lambda item: item["x"])]
         normalized = [re.sub(r"[^a-z]", "", text.lower()) for text, _ in labels]
-        if "date" in normalized and "description" in normalized and (
-            "additions" in normalized or "subtractions" in normalized
+        if "date" in normalized and ("description" in normalized or "details" in normalized) and (
+            "additions" in normalized or "subtractions" in normalized or
+            "debit" in normalized or "debits" in normalized or
+            "credit" in normalized or "credits" in normalized or
+            "amount" in normalized or "balance" in normalized
         ):
             header_anchor_idx = idx
             header_anchors = labels

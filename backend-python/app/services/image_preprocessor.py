@@ -96,7 +96,7 @@ def remove_scan_artifacts(image: np.ndarray) -> np.ndarray:
     return cleaned
 
 
-def preprocess_scanned_pdf(file_path: Path, dpi: int = 200) -> List[np.ndarray]:
+def preprocess_scanned_pdf(file_path: Path, dpi: int = 300) -> List[np.ndarray]:
     images = convert_from_path(str(file_path), dpi=dpi)
     processed_images = []
     for pil_image in images:
@@ -109,7 +109,9 @@ def preprocess_scanned_pdf(file_path: Path, dpi: int = 200) -> List[np.ndarray]:
             img = apply_clahe(img)
         if quality["noise_level"] > 0.4:
             img = denoise_image(img)
-        if quality["noise_level"] > 0.6:
-            img = remove_scan_artifacts(img)
+        # remove_scan_artifacts uses morphological opening which destroys thin text.
+        # PaddleOCR handles scan noise well naturally, so we disable this step.
+        # if quality["noise_level"] > 0.6:
+        #     img = remove_scan_artifacts(img)
         processed_images.append(img)
     return processed_images

@@ -70,6 +70,22 @@ _TOTAL_DEBITS_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CREDIT_DESCRIPTION_RE = re.compile(
+    r"\b(REPRESENTMENT|AFFIRM\.COM\s+PAYME|DEPOSIT|CREDIT)\b",
+    re.IGNORECASE,
+)
+
+_DEBIT_DESCRIPTION_RE = re.compile(
+    r"\b("
+    r"EXPANSIONCAP\s+(?:PMTS|FEE)|INTUIT\s+\d+\s+TRAN\s+FEE|"
+    r"XX\d{4}\s+(?:PURCHASE|ATM\s+WITHDRAWAL)|"
+    r"\d{6,}\s+TRANSFER\s+TO\s+X{2,}\d+|"
+    r"CAPITAL\s+ONE\s+(?:CRCARDPMT|MOBILE\s+PMT)|"
+    r"ALLY\s+ALLY\s+PAYMT|CHECK"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # A data line has at least a DATE column value (MM/DD/YY) somewhere to the right
 # and ends with a BALANCE figure.
 # We treat any line that contains a date-like token + at least one amount as a data line.
@@ -126,9 +142,14 @@ def _extract_amount(text: str) -> Optional[float]:
     """Parse a numeric amount string like '1,234.56' into a float."""
     if not text:
         return None
-    cleaned = re.sub(r"[,$]", "", text).strip()
+    cleaned = str(text).strip()
+    negative = (
+        cleaned.startswith("(") and cleaned.endswith(")")
+    ) or cleaned.endswith("-") or cleaned.startswith("-")
+    cleaned = re.sub(r"[,$()\s-]", "", cleaned)
     try:
-        return float(cleaned)
+        value = float(cleaned)
+        return -value if negative else value
     except ValueError:
         return None
 
@@ -207,6 +228,27 @@ def _parse_data_line(line: str, statement_year: Optional[int] = None) -> Tuple[
     return date_val, debit_val, credit_val, balance_val
 
 
+def _apply_description_direction(
+    description: str,
+    debit: Optional[float],
+    credit: Optional[float],
+) -> Tuple[Optional[float], Optional[float]]:
+    """Use Palmetto-specific description clues when OCR column spacing is weak."""
+    amount: Optional[float] = None
+    if debit is not None and credit is None:
+        amount = abs(debit)
+    elif credit is not None and debit is None:
+        amount = abs(credit)
+    else:
+        return debit, credit
+
+    if _CREDIT_DESCRIPTION_RE.search(description):
+        return None, amount
+    if _DEBIT_DESCRIPTION_RE.search(description):
+        return amount, None
+    return debit, credit
+
+
 class PalmettoStateBankParser(BaseParser):
     """Parser for Palmetto State Bank fixed-width / scanned-OCR statements."""
 
@@ -222,6 +264,7 @@ class PalmettoStateBankParser(BaseParser):
     def parse(self) -> ParseResult:
         transactions = self.extract_transactions()
         metadata = self._extract_palmetto_metadata(transactions)
+        validation_errors = self._validate(metadata, transactions)
         return ParseResult(
             metadata=metadata,
             transactions=transactions,
@@ -229,6 +272,7 @@ class PalmettoStateBankParser(BaseParser):
             parser_id=self.parser_id,
             bank_id=metadata.bank_id,
             template_id=self.context.template_id,
+            validation_errors=validation_errors,
         )
 
     # ------------------------------------------------------------------
@@ -286,26 +330,26 @@ class PalmettoStateBankParser(BaseParser):
                 closing_balance = balances[-1]
 
         # --- Summary totals ---
-        total_credits_count: int = 0
-        total_credits_amount: float = 0.0
-        total_debits_count: int = 0
-        total_debits_amount: float = 0.0
+        total_credits_count: Optional[int] = None
+        total_credits_amount: Optional[float] = None
+        total_debits_count: Optional[int] = None
+        total_debits_amount: Optional[float] = None
 
         m = _TOTAL_CREDITS_RE.search(full_text)
         if m:
             total_credits_count = int(m.group(1))
-            total_credits_amount = _extract_amount(m.group(2)) or 0.0
+            total_credits_amount = _extract_amount(m.group(2))
 
         m = _TOTAL_DEBITS_RE.search(full_text)
         if m:
             total_debits_count = int(m.group(1))
-            total_debits_amount = _extract_amount(m.group(2)) or 0.0
+            total_debits_amount = _extract_amount(m.group(2))
 
         # --- Customer name & account name (page 1 only) ---
-        customer_name: Optional[str] = fallback.get("customer_name")
-        account_name: Optional[str] = None
-
+        fallback_customer_name: Optional[str] = fallback.get("customer_name")
         customer_name, account_name = self._extract_names(lines)
+        if not customer_name:
+            customer_name = fallback_customer_name
 
         return StatementMetadata(
             bank_id=_BANK_ID,
@@ -313,7 +357,7 @@ class PalmettoStateBankParser(BaseParser):
             account_number=account_number,
             account_type="Checking",
             customer_name=customer_name,
-            account_holder=customer_name,
+            account_holder=account_name or customer_name,
             statement_start_date=statement_start_date,
             statement_end_date=statement_end_date,
             opening_balance=opening_balance,
@@ -344,6 +388,12 @@ class PalmettoStateBankParser(BaseParser):
 
         # Only look at the first page (~first 40 lines)
         page1_lines = lines[:40]
+
+        anchored_account, anchored_customer = self._extract_names_from_logo_block(
+            page1_lines
+        )
+        if anchored_account or anchored_customer:
+            return anchored_customer or anchored_account, anchored_account
 
         # Find a line that looks like a US street address as an anchor
         address_re = re.compile(
@@ -404,6 +454,102 @@ class PalmettoStateBankParser(BaseParser):
 
         return customer_name, account_name
 
+    def _extract_names_from_logo_block(
+        self, lines: List[str]
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Use the Palmetto logo URL block when OCR preserves page-one order."""
+        start_idx: Optional[int] = None
+        for idx, line in enumerate(lines):
+            if "palmettostatebanksc.com" in line.lower():
+                start_idx = idx + 1
+                break
+        if start_idx is None:
+            return None, None
+
+        candidates: List[str] = []
+        for line in lines[start_idx : start_idx + 10]:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if re.search(r"={5,}", stripped):
+                break
+            if _CUSTOMER_NAME_BLOCKLIST.search(stripped):
+                continue
+            if re.search(
+                r"\b(DESCRIPTION|DEBITS|CREDITS|DATE|BALANCE|PAGE|ACCOUNT)\b",
+                stripped,
+                re.IGNORECASE,
+            ):
+                continue
+            if re.search(r"\d{5}(?:-\d{4})?$", stripped):
+                continue
+            if re.match(r"^\d+\s+", stripped):
+                continue
+            candidates.append(stripped)
+            if len(candidates) >= 2:
+                break
+
+        account_name = candidates[0] if candidates else None
+        customer_name = candidates[1] if len(candidates) > 1 else None
+        return account_name, customer_name
+
+    def _validate(
+        self,
+        metadata: StatementMetadata,
+        transactions: List[Transaction],
+    ) -> List[str]:
+        errors: List[str] = []
+        credit_sum = round(sum(float(txn.credit or 0) for txn in transactions), 2)
+        debit_sum = round(sum(float(txn.debit or 0) for txn in transactions), 2)
+        credit_count = sum(1 for txn in transactions if txn.credit is not None)
+        debit_count = sum(1 for txn in transactions if txn.debit is not None)
+
+        if metadata.credit_count and metadata.credit_count != credit_count:
+            errors.append(
+                f"Credit count mismatch: extracted "
+                f"{credit_count}, statement says {metadata.credit_count}."
+            )
+        if metadata.debit_count and metadata.debit_count != debit_count:
+            errors.append(
+                f"Debit count mismatch: extracted "
+                f"{debit_count}, statement says {metadata.debit_count}."
+            )
+
+        if (
+            metadata.total_credits is not None
+            and abs(credit_sum - metadata.total_credits) > 0.05
+        ):
+            errors.append(
+                f"Credit total mismatch: extracted {credit_sum}, "
+                f"statement says {metadata.total_credits}."
+            )
+        if (
+            metadata.total_debits is not None
+            and abs(debit_sum - metadata.total_debits) > 0.05
+        ):
+            errors.append(
+                f"Debit total mismatch: extracted {debit_sum}, "
+                f"statement says {metadata.total_debits}."
+            )
+        if (
+            metadata.opening_balance is not None
+            and metadata.closing_balance is not None
+            and metadata.total_credits is not None
+            and metadata.total_debits is not None
+        ):
+            expected = round(
+                metadata.opening_balance + metadata.total_credits - metadata.total_debits,
+                2,
+            )
+            if abs(expected - metadata.closing_balance) > 0.05:
+                errors.append(
+                    f"Balance equation failed: {metadata.opening_balance} + "
+                    f"{metadata.total_credits} - {metadata.total_debits} = "
+                    f"{expected}, statement says {metadata.closing_balance}."
+                )
+
+        return errors
+
     # ------------------------------------------------------------------
     # Transaction extraction
     # ------------------------------------------------------------------
@@ -443,6 +589,8 @@ class PalmettoStateBankParser(BaseParser):
             # Skip the opening balance pseudo-transaction
             if re.search(r"BALANCE\s+LAST\s+STATEMENT", description, re.IGNORECASE):
                 return
+
+            debit, credit = _apply_description_direction(description, debit, credit)
 
             seq += 1
             transactions.append(

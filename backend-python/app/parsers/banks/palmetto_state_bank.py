@@ -249,6 +249,25 @@ def _apply_description_direction(
     return debit, credit
 
 
+def _summary_transaction_count(lines: List[str]) -> Optional[int]:
+    """Return statement-declared transaction count when summary totals exist."""
+    full_text = "\n".join(lines)
+    total = 0
+    found = False
+
+    credit_match = _TOTAL_CREDITS_RE.search(full_text)
+    if credit_match:
+        total += int(credit_match.group(1))
+        found = True
+
+    debit_match = _TOTAL_DEBITS_RE.search(full_text)
+    if debit_match:
+        total += int(debit_match.group(1))
+        found = True
+
+    return total if found else None
+
+
 class PalmettoStateBankParser(BaseParser):
     """Parser for Palmetto State Bank fixed-width / scanned-OCR statements."""
 
@@ -259,7 +278,117 @@ class PalmettoStateBankParser(BaseParser):
 
     def extract_transactions(self) -> List[Transaction]:
         lines = _flatten_rows(self.context.rows)
-        return self._parse_transactions(lines, statement_year=self.context.statement_year)
+        grid_transactions = self._parse_grid_transactions()
+        state_transactions = self._parse_transactions(
+            lines,
+            statement_year=self.context.statement_year,
+        )
+        expected_count = _summary_transaction_count(lines)
+
+        if expected_count:
+            minimum_usable_count = max(1, int(expected_count * 0.8))
+            if (
+                len(grid_transactions) < minimum_usable_count
+                and len(state_transactions) > len(grid_transactions)
+            ):
+                return state_transactions
+
+        if len(state_transactions) > len(grid_transactions):
+            return state_transactions
+        return grid_transactions
+
+    def _parse_grid_transactions(self) -> List[Transaction]:
+        # With the new PP-OCRv4 mobile model, row grid extraction is excellent.
+        # We use the standard robust grid parsing instead of a brittle string-flattening state machine.
+        from app.services.table_parser import (
+            map_columns,
+            merge_wrapped_rows,
+            detect_header_row,
+            detect_balance_column_from_data,
+        )
+        from app.services.postprocessor import (
+            clean_amount,
+            parse_date,
+            classify_debit_credit,
+        )
+
+        rows = self.context.rows
+        stmt_year = self.context.statement_year
+        header_idx = detect_header_row(rows)
+
+        if header_idx is None:
+            return []
+
+        header_row = rows[header_idx]
+        col_map = map_columns(header_row)
+
+        if not col_map or 'date' not in col_map:
+            return []
+
+        data_rows = rows[header_idx + 1:]
+        date_col = col_map['date']
+
+        # Merge multiline descriptions using standard wrapper
+        data_rows = merge_wrapped_rows(data_rows, date_col)
+
+        # Detect balance column
+        balance_col = detect_balance_column_from_data(data_rows, col_map)
+        if balance_col is not None and 'balance' not in col_map:
+            col_map['balance'] = balance_col
+
+        transactions: List[Transaction] = []
+        seq = 0
+
+        for row in data_rows:
+            if not row or not any(str(c).strip() for c in row):
+                continue
+
+            date_str = None
+            if date_col < len(row):
+                date_str = parse_date(str(row[date_col]), statement_year=stmt_year)
+
+            if not date_str:
+                continue
+
+            desc = ""
+            if 'description' in col_map and col_map['description'] < len(row):
+                desc = str(row[col_map['description']]).strip()
+            if not desc:
+                desc = " ".join(str(c) for c in row).strip()
+
+            debit, credit = classify_debit_credit(row, col_map, balance_col=col_map.get('balance'))
+
+            if debit is None and credit is None:
+                continue
+
+            balance = None
+            if 'balance' in col_map and col_map['balance'] < len(row):
+                balance = clean_amount(str(row[col_map['balance']]))
+                if balance is not None:
+                    balance = abs(balance)
+
+            seq += 1
+            transactions.append(Transaction(
+                seq=seq,
+                date=date_str,
+                description=desc,
+                debit=debit,
+                credit=credit,
+                balance=balance,
+            ))
+
+        # Include check detail rows (common for Palmetto)
+        try:
+            from app.services.ocr_pipeline import _parse_check_detail_rows
+            transactions.extend(_parse_check_detail_rows(rows, statement_year=stmt_year))
+        except ImportError:
+            pass
+
+        # If standard parser yielded basically nothing, fall back
+        if len(transactions) < 2:
+            return []
+
+        return transactions
 
     def parse(self) -> ParseResult:
         transactions = self.extract_transactions()

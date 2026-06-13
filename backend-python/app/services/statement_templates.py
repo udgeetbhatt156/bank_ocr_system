@@ -289,6 +289,42 @@ TEMPLATES: List[StatementTemplate] = [
             "March statement  (3).pdf",
         ],
     ),
+    StatementTemplate(
+        template_id="washington_trust_bank_v1",
+        bank_name="Washington Trust Bank",
+        layout_family="activity_date_order_additions_subtractions",
+        parser_format="washington_trust_bank",
+        bank_patterns=[
+            "washington trust bank",
+            "washington trust",
+            "watrust.com",
+            "watrust",
+        ],
+        header_keywords=[
+            "activity in date order",
+            "date",
+            "description",
+            "additions",
+            "subtractions",
+            "daily balance information",
+            "checks posted",
+        ],
+        amount_rules={
+            "additions_are_credit": True,
+            "subtractions_are_debit": True,
+            "no_transaction_running_balance": True,
+        },
+        stop_keywords=[
+            "daily balance information",
+            "checks posted",
+            "account summary",
+        ],
+        sample_files=[
+            "20260301104336913.pdf",
+            "20260316114414167.pdf",
+            "20260402070518012.pdf",
+        ],
+    ),
     # Wells Fargo — Check# / Credits / Debits / Ending Daily Balance
     StatementTemplate(
         template_id="wells_fargo_business_checking_v1",
@@ -399,6 +435,7 @@ BANK_KEY_MAP: Dict[str, List[str]] = {
     "navy-federal":     ["genreich_signed_amount_v1", "navy_federal_scanned_v1"],
     "wells-fargo":      ["wells_fargo_business_checking_v1"],
     "palmetto-state-bank": ["palmetto_state_bank_v1"],
+    "washington-trust-bank": ["washington_trust_bank_v1"],
 }
 
 # Fast O(1) lookup index: template_id → StatementTemplate

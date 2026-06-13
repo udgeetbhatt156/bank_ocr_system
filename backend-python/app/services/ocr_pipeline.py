@@ -152,6 +152,11 @@ def _statement_result_from_parse_result(
     debug_extraction: Optional[Dict] = None,
 ) -> StatementResult:
     transactions = deduplicate_transactions(parse_result.transactions)
+    parser_debug = dict(debug_extraction or {})
+    if parse_result.checks_register:
+        parser_debug["checks_register"] = parse_result.checks_register
+    if parse_result.extra:
+        parser_debug.update(parse_result.extra)
     combined_warnings = [
         *warnings,
         *parse_result.warnings,
@@ -187,7 +192,7 @@ def _statement_result_from_parse_result(
         pdf_type=pdf_type or "unknown",
         warnings=combined_warnings,
         raw_text=raw_text,
-        debug_extraction=debug_extraction or {},
+        debug_extraction=parser_debug,
         bank_name=bank_name,
         account_number=account_number,
         customer_name=customer_name,

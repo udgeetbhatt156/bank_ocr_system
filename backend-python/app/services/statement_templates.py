@@ -364,6 +364,50 @@ TEMPLATES: List[StatementTemplate] = [
         ],
     ),
     StatementTemplate(
+        template_id="indiana_members_cu_v1",
+        bank_name="Indiana Members Credit Union",
+        layout_family="multi_account_statement",
+        parser_format="indiana_members_cu",
+        bank_patterns=[
+            "indiana members credit union",
+            "imcu",
+            "imcu.com",
+            "800.556.9268",
+            "p.o. box 47769",
+            "keeping it simple",
+        ],
+        header_keywords=[
+            "business membership savings",
+            "free business checking",
+            "member number",
+            "statement of account",
+        ],
+        sample_files=["Indiana Bank.pdf"],
+    ),
+    StatementTemplate(
+        template_id="forbright_bank_v1",
+        bank_name="Forbright Bank",
+        layout_family="separate_debits_credits_daily_balances",
+        parser_format="forbright_commercial",
+        bank_patterns=[
+            "forbright bank",
+            "forbright",
+            "4445 willard ave",
+            "chevy chase, md 20815",
+            "888-855-7778",
+            "direct inquiries to:",
+        ],
+        header_keywords=[
+            "commercial checking",
+            "cash mgmt trsfr dr",
+            "preauthorized debit",
+            "preauthorized credit",
+            "subtractions",
+            "additions",
+        ],
+        sample_files=["Forbright Bank.pdf"],
+    ),
+    StatementTemplate(
         template_id="wells_fargo_business_checking_v1",
         bank_name="Wells Fargo",
         layout_family="separate_debit_credit_with_daily_balance",
@@ -474,6 +518,10 @@ BANK_KEY_MAP: Dict[str, List[str]] = {
     "palmetto-state-bank": ["palmetto_state_bank_v1"],
     "washington-trust-bank": ["washington_trust_bank_v1"],
     "timberland-bank":  ["timberland_bank_v1"],
+    "imcu":             ["indiana_members_cu_v1"],
+    "indiana-members-credit-union": ["indiana_members_cu_v1"],
+    "forbright":        ["forbright_bank_v1"],
+    "forbright-bank":   ["forbright_bank_v1"],
 }
 
 # Fast O(1) lookup index: template_id → StatementTemplate

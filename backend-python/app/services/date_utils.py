@@ -75,7 +75,7 @@ def parse_date(
                 except ValueError:
                     continue
 
-    m = re.search(r'\b([A-Za-z]{3})\.?\s+(\d{1,2})(?:[,\s]+(\d{4}))?\b', s)
+    m = re.search(r'\b([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2})(?:[,\s]+(\d{4}))?\b', s)
     if m:
         mon_str = m.group(1).lower()
         if mon_str in _MONTH_MAP:

@@ -133,6 +133,8 @@ export default function UploadPage() {
           <SelectItem value="palmetto-state-bank">Palmetto State Bank</SelectItem>
           <SelectItem value="washington-trust-bank">Washington Trust Bank</SelectItem>
           <SelectItem value="timberland-bank">Timberland Bank</SelectItem>
+          <SelectItem value="imcu">Indiana Members Credit Union (IMCU)</SelectItem>
+          <SelectItem value="forbright">Forbright Bank</SelectItem>
         </SelectContent>
         </Select>
             </div>

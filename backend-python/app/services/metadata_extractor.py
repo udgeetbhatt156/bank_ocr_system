@@ -6,6 +6,14 @@ import re
 from typing import Any, Dict, List, Optional
 from app.models.schemas import Transaction
 
+"""
+Extract statement-level metadata from OCR rows and parsed transactions.
+Tuned for US bank statements (BMO, Suncoast, U.S. Bank, Chase, etc.).
+"""
+import re
+from typing import Any, Dict, List, Optional
+from app.models.schemas import Transaction
+
 
 
 # === EXISTING PATTERNS (unchanged) ===
@@ -16,11 +24,12 @@ US_BANK_PATTERNS = [
     (r"\bsofi\b", "SoFi Bank"),
     (r"\btimberland\s+bank\b", "Timberland Bank"),
     (r"\btimberlandbank\.com\b", "Timberland Bank"),
-    # Citibank must be matched before BoA — Citi statements reference
-    # "Bank of America" in ATM withdrawal locations.
-    (r"\bcitibusiness\b", "Citibank"),
-    (r"\bcitibank\b", "Citibank"),
-    (r"\bcitigroup\b", "Citibank"),
+    (r"\bindiana\s+members\s+credit\s+union\b", "Indiana Members Credit Union"),
+    (r"\bimcu\b", "Indiana Members Credit Union"),
+    (r"\bforbright\s+bank\b", "Forbright Bank"),
+    (r"\bforbright\b", "Forbright Bank"),
+
+
     (r"\bbank\s+of\s+america\b", "Bank of America"),
     (r"\bwells\s*fargo\b", "Wells Fargo"),
     (r"\bjpmorgan\s+chase\b", "JPMorgan Chase"),

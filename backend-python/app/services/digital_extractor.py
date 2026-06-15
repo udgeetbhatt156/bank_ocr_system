@@ -233,28 +233,38 @@ def extract_digital_pdf(file_path: Path) -> List[List[str]]:
     all_rows: List[List[str]] = []
 
     with pdfplumber.open(file_path) as pdf:
+        # Check if the document is an Indiana Members Credit Union (IMCU) statement
+        is_imcu = False
+        if len(pdf.pages) > 0:
+            first_page_text = pdf.pages[0].extract_text() or ""
+            if any(kw in first_page_text.lower() for kw in ["indiana members", "imcu", "keeping it simple"]):
+                is_imcu = True
+
         for page in pdf.pages:
             page_rows: List[List[str]] = []
-            tables = page.extract_tables()
-            if not tables:
-                tables = page.extract_tables({
-                    "vertical_strategy": "text",
-                    "horizontal_strategy": "text",
-                    "min_words_vertical": 3,
-                    "min_words_horizontal": 1,
-                })
-            if tables:
-                table_rows: List[List[str]] = []
-                for table in tables:
-                    for row in table:
-                        cleaned = [
-                            normalize_extracted_cell(str(c)) if c else ""
-                            for c in row
-                        ]
-                        if any(cleaned):
-                            table_rows.append(cleaned)
-                if _looks_like_transaction_table(table_rows):
-                    page_rows = table_rows
+            
+            # If not IMCU, attempt table extraction first
+            if not is_imcu:
+                tables = page.extract_tables()
+                if not tables:
+                    tables = page.extract_tables({
+                        "vertical_strategy": "text",
+                        "horizontal_strategy": "text",
+                        "min_words_vertical": 3,
+                        "min_words_horizontal": 1,
+                    })
+                if tables:
+                    table_rows: List[List[str]] = []
+                    for table in tables:
+                        for row in table:
+                            cleaned = [
+                                normalize_extracted_cell(str(c)) if c else ""
+                                for c in row
+                            ]
+                            if any(cleaned):
+                                table_rows.append(cleaned)
+                    if _looks_like_transaction_table(table_rows):
+                        page_rows = table_rows
 
             if not page_rows:
                 page_rows = _extract_rows_from_words(page)

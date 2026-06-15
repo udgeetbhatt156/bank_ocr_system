@@ -8,6 +8,8 @@ from app.parsers.banks.timberland_bank import TimberlandBankParser
 from app.parsers.banks.washington_trust_bank import WashingtonTrustBankParser
 from app.parsers.banks.indiana_members_cu import IndianaMembersCUParser
 from app.parsers.banks.forbright import ForbrightBankParser
+from app.parsers.banks.wayne_bank import WayneBankParser
+from app.parsers.banks.first_kansas_bank import FirstKansasBankParser
 
 __all__ = [
     "PeopleSouthParser",
@@ -18,5 +20,7 @@ __all__ = [
     "WashingtonTrustBankParser",
     "IndianaMembersCUParser",
     "ForbrightBankParser",
+    "WayneBankParser",
+    "FirstKansasBankParser",
 ]
 

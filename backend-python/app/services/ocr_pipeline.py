@@ -1134,7 +1134,10 @@ def process_single_statement(
     suffix = file_path.suffix.lower()
     is_image = suffix in {'.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif'}
 
-    if is_image:
+    file_name_lower = file_path.name.lower()
+    is_wayne = (bank_hint and bank_hint.lower() in ["wayne", "waynebank", "wayne_bank"]) or "wayne" in file_name_lower
+
+    if is_image or is_wayne:
         pdf_type = "scanned"
     else:
         pdf_type = detect_pdf_type(file_path)
@@ -1156,6 +1159,12 @@ def process_single_statement(
     if pdf_type == "scanned" or not rows:
         try:
             images = preprocess_scanned_pdf(file_path, dpi=200)
+            file_name_lower = file_path.name.lower()
+            is_wayne = (bank_hint and bank_hint.lower() in ["wayne", "waynebank", "wayne_bank"]) or "wayne" in file_name_lower
+            if is_wayne:
+                import cv2
+                LOGGER.info(f"[{file_path.name}] Wayne Bank statement detected. Rotating pages 270 degrees (90 deg CCW) for correct OCR alignment.")
+                images = [cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE) for img in images]
             debug_pages = []
             for page_number, img in enumerate(images, start=1):
                 ocr_rows, debug_page = extract_ocr_rows_with_debug(
@@ -1241,8 +1250,24 @@ def process_single_statement(
     else:
         context_bank_id = preliminary_meta.get("bank_name")
 
+    # Extract raw page text for parsers that need line-by-line text
+    # (e.g. First Kansas Bank with separate DEPOSITS/WITHDRAWALS sections).
+    # Table-extracted rows can garble complex multi-section layouts, but
+    # raw text preserves the original line structure.
+    raw_text_full = ""
+    if pdf_type == "digital" and suffix == ".pdf":
+        try:
+            import pdfplumber
+            with pdfplumber.open(file_path) as pdf:
+                raw_text_full = "\n".join(
+                    page.extract_text() or "" for page in pdf.pages
+                )
+        except Exception as e:
+            LOGGER.debug(f"[{file_path.name}] raw_text extraction failed: {e}")
+
     parser_context = ParserContext(
         rows=rows,
+        raw_text=raw_text_full,
         pdf_type=pdf_type,
         filename=file_path.name,
         bank_id=context_bank_id,

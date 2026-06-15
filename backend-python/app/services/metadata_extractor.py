@@ -28,6 +28,8 @@ US_BANK_PATTERNS = [
     (r"\bimcu\b", "Indiana Members Credit Union"),
     (r"\bforbright\s+bank\b", "Forbright Bank"),
     (r"\bforbright\b", "Forbright Bank"),
+    (r"\bwayne\s+bank\b", "Wayne Bank"),
+    (r"\bwaynebank\b", "Wayne Bank"),
 
 
     (r"\bbank\s+of\s+america\b", "Bank of America"),

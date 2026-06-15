@@ -135,6 +135,8 @@ export default function UploadPage() {
           <SelectItem value="timberland-bank">Timberland Bank</SelectItem>
           <SelectItem value="imcu">Indiana Members Credit Union (IMCU)</SelectItem>
           <SelectItem value="forbright">Forbright Bank</SelectItem>
+          <SelectItem value="first-kansas-bank">First Kansas Bank</SelectItem>
+          <SelectItem value="wayne">Wayne Bank</SelectItem>
         </SelectContent>
         </Select>
             </div>

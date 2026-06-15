@@ -408,6 +408,56 @@ TEMPLATES: List[StatementTemplate] = [
         sample_files=["Forbright Bank.pdf"],
     ),
     StatementTemplate(
+        template_id="wayne_bank_v1",
+        bank_name="Wayne Bank",
+        layout_family="separate_debits_credits_daily_balances",
+        parser_format="wayne_bank_commercial",
+        bank_patterns=[
+            "wayne bank",
+            "wayne",
+            "hawley, pa",
+            "po box 289",
+        ],
+        header_keywords=[
+            "business checking account",
+            "checks/debits",
+            "deposits/credits",
+            "balance last statement",
+            "balance this statement",
+        ],
+        sample_files=["Wayne Bank.pdf"],
+    ),
+    StatementTemplate(
+        template_id="first_kansas_bank_v1",
+        bank_name="First Kansas Bank",
+        layout_family="sectioned_deposits_withdrawals_with_daily_balance",
+        parser_format="first_kansas_bank",
+        bank_patterns=[
+            "first kansas bank",
+            "first kansas",
+        ],
+        header_keywords=[
+            "deposits",
+            "withdrawals",
+            "daily balance information",
+            "business checking",
+            "statement dates",
+            "checks/debits",
+            "deposits/credits",
+        ],
+        amount_rules={
+            "section_deposits_are_credit": True,
+            "section_withdrawals_are_debit": True,
+            "trailing_minus_is_debit": True,
+            "no_transaction_running_balance": True,
+        },
+        stop_keywords=[
+            "daily balance information",
+            "deposit/credit date",
+        ],
+        sample_files=["First Kansas Bank.pdf"],
+    ),
+    StatementTemplate(
         template_id="wells_fargo_business_checking_v1",
         bank_name="Wells Fargo",
         layout_family="separate_debit_credit_with_daily_balance",
@@ -522,6 +572,10 @@ BANK_KEY_MAP: Dict[str, List[str]] = {
     "indiana-members-credit-union": ["indiana_members_cu_v1"],
     "forbright":        ["forbright_bank_v1"],
     "forbright-bank":   ["forbright_bank_v1"],
+    "wayne":            ["wayne_bank_v1"],
+    "wayne-bank":       ["wayne_bank_v1"],
+    "first-kansas-bank": ["first_kansas_bank_v1"],
+    "first-kansas":      ["first_kansas_bank_v1"],
 }
 
 # Fast O(1) lookup index: template_id → StatementTemplate

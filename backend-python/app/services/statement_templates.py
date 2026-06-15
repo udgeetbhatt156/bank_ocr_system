@@ -327,6 +327,43 @@ TEMPLATES: List[StatementTemplate] = [
     ),
     # Wells Fargo — Check# / Credits / Debits / Ending Daily Balance
     StatementTemplate(
+        template_id="timberland_bank_v1",
+        bank_name="Timberland Bank",
+        layout_family="sectioned_credits_debits_with_checks",
+        parser_format="timberland_bank",
+        bank_patterns=[
+            "timberland bank",
+            "timberlandbank.com",
+            "hoquiam",
+            "624 simpson ave",
+        ],
+        header_keywords=[
+            "checking account",
+            "statement dates",
+            "credits",
+            "debits",
+            "statement code summary",
+            "checks cleared",
+            "daily balance information",
+        ],
+        amount_rules={
+            "credits_section_is_credit": True,
+            "debits_section_is_debit": True,
+            "trailing_minus_is_debit": True,
+            "no_transaction_running_balance": True,
+            "checks_cleared_parse_separately": True,
+        },
+        stop_keywords=[
+            "statement code summary",
+            "checks cleared",
+            "daily balance information",
+        ],
+        sample_files=[
+            "Timberkand Bank.pdf",
+            "Timberkand Bank (1).pdf",
+        ],
+    ),
+    StatementTemplate(
         template_id="wells_fargo_business_checking_v1",
         bank_name="Wells Fargo",
         layout_family="separate_debit_credit_with_daily_balance",
@@ -436,6 +473,7 @@ BANK_KEY_MAP: Dict[str, List[str]] = {
     "wells-fargo":      ["wells_fargo_business_checking_v1"],
     "palmetto-state-bank": ["palmetto_state_bank_v1"],
     "washington-trust-bank": ["washington_trust_bank_v1"],
+    "timberland-bank":  ["timberland_bank_v1"],
 }
 
 # Fast O(1) lookup index: template_id → StatementTemplate

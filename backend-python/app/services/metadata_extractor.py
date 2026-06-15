@@ -14,6 +14,8 @@ US_BANK_PATTERNS = [
     # in the insured deposit program (BoA, Huntington, etc.)
     (r"\bsofi\s+bank\b", "SoFi Bank"),
     (r"\bsofi\b", "SoFi Bank"),
+    (r"\btimberland\s+bank\b", "Timberland Bank"),
+    (r"\btimberlandbank\.com\b", "Timberland Bank"),
     # Citibank must be matched before BoA — Citi statements reference
     # "Bank of America" in ATM withdrawal locations.
     (r"\bcitibusiness\b", "Citibank"),

@@ -130,8 +130,9 @@ export default function UploadPage() {
           <SelectItem value="sofi-bank">SoFi Bank</SelectItem>
           <SelectItem value="navy-federal">Navy Federal Credit Union</SelectItem>
           <SelectItem value="wells-fargo">Wells Fargo</SelectItem>
-          <SelectItem value="palmetto">Palmetto State Bank</SelectItem>
-          <SelectItem value="washington-trust">Washington Trust Bank</SelectItem>
+          <SelectItem value="palmetto-state-bank">Palmetto State Bank</SelectItem>
+          <SelectItem value="washington-trust-bank">Washington Trust Bank</SelectItem>
+          <SelectItem value="timberland-bank">Timberland Bank</SelectItem>
         </SelectContent>
         </Select>
             </div>

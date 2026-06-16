@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     const token = await signToken({ sub: user.id, email: user.email, name: user.name });
-    const response = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name } });
+    const response = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name }, token });
     response.cookies.set({
       name: "bankocr_session",
       value: token,
@@ -36,6 +36,9 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === "production",
       maxAge: 60 * 60 * 24 * 7,
     });
+
+    response.headers.set("X-PW-AccessToken", token);
+    response.headers.set("X-PW-UserEmail", user.email);
 
     return response;
   } catch (error) {

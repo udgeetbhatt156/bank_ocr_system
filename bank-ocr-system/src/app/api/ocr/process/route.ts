@@ -6,6 +6,7 @@ import FormData from "form-data";
 import { NextResponse } from "next/server";
 
 import { requireAuthUser } from "@/lib/auth-server";
+import { verifyToken, signToken } from "@/lib/jwt";
 import { persistOcrDocument, computeFileHash, statementToDocumentResult } from "@/lib/statements";
 import { prisma } from "@/lib/prisma";
 import type { OcrDocumentPayload } from "@/lib/statements";
@@ -44,7 +45,41 @@ export async function POST(request: Request) {
   try {
     user = await requireAuthUser();
   } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const token = request.headers.get("X-PW-AccessToken");
+    const appName = request.headers.get("X-PW-Application");
+    const email = request.headers.get("X-PW-UserEmail");
+
+    if (token && appName && email) {
+      try {
+        const payload = await verifyToken(token);
+        if (payload.email === email) {
+          let dbUser = await prisma.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, name: true },
+          });
+
+          if (!dbUser) {
+            const { hash } = require("bcryptjs");
+            const dummyPassword = await hash(Math.random().toString(36), 10);
+            dbUser = await prisma.user.create({
+              data: {
+                email,
+                name: appName,
+                password: dummyPassword,
+              },
+              select: { id: true, email: true, name: true },
+            });
+          }
+          user = dbUser;
+        } else {
+          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+      } catch (err) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    } else {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const formData = await request.formData();
@@ -108,12 +143,22 @@ export async function POST(request: Request) {
       upstreamForm.append("bank_hint", bankHint);
     }
 
-    // Call Python OCR with duplicate-check endpoint (returns file_hash + content_hash)
+    let forwardToken = request.headers.get("X-PW-AccessToken");
+    if (!forwardToken) {
+      forwardToken = await signToken({ sub: user.id, email: user.email, name: user.name || "" });
+    }
+
     const response = await axios.post(
       `${PYTHON_OCR_URL}/api/ocr/process-with-duplicate-check`,
       upstreamForm,
       {
-        headers: upstreamForm.getHeaders(),
+        headers: {
+          ...upstreamForm.getHeaders(),
+          "X-PW-AccessToken": forwardToken,
+          "X-PW-Application": request.headers.get("X-PW-Application") || "ocr_service",
+          "X-PW-UserEmail": user.email,
+          "Content-Type": "multipart/form-data"
+        },
         timeout: 1200_000,
       }
     );

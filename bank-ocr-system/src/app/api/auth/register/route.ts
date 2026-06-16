@@ -47,6 +47,9 @@ export async function POST(request: Request) {
       maxAge: 60 * 60 * 24 * 7,
     });
 
+    response.headers.set("X-PW-AccessToken", token);
+    response.headers.set("X-PW-UserEmail", user.email);
+
     return response;
   } catch (error) {
     console.error("Register error:", error);

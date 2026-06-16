@@ -12,9 +12,10 @@ import uuid
 
 import aiofiles
 import pdfplumber
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+import jwt
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Header, Depends, status
 
-from app.core.config import UPLOAD_DIR
+from app.core.config import UPLOAD_DIR, JWT_SECRET
 from app.models.schemas import OCRResponse, StatementResult, Transaction
 from app.services.ingestion import detect_pdf_type
 from app.services.preprocessor import preprocess_scanned_pdf
@@ -960,7 +961,32 @@ async def _process_uploaded_file(
             pass
 
 
-@router.post("/process", response_model=OCRResponse)
+def verify_api_credentials(
+    x_pw_accesstoken: Optional[str] = Header(None, alias="X-PW-AccessToken"),
+    x_pw_application: Optional[str] = Header(None, alias="X-PW-Application"),
+    x_pw_useremail: Optional[str] = Header(None, alias="X-PW-UserEmail"),
+):
+    if not x_pw_accesstoken or not x_pw_application or not x_pw_useremail:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized / Access Denied"
+        )
+    try:
+        payload = jwt.decode(x_pw_accesstoken, JWT_SECRET, algorithms=["HS256"])
+        token_email = payload.get("email")
+        if not token_email or token_email.lower() != x_pw_useremail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized / Access Denied"
+            )
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized / Access Denied"
+        )
+
+
+@router.post("/process", response_model=OCRResponse, dependencies=[Depends(verify_api_credentials)])
 async def process_documents(
     files: List[UploadFile] = File(...),
     bank_hint: Optional[str] = Form(None),
@@ -986,7 +1012,7 @@ async def process_documents(
     return OCRResponse(status="success", documents=results)
 
 
-@router.post("/process-with-duplicate-check", response_model=OCRResponse)
+@router.post("/process-with-duplicate-check", response_model=OCRResponse, dependencies=[Depends(verify_api_credentials)])
 async def process_documents_with_duplicate_check(
     files: List[UploadFile] = File(...),
     bank_hint: Optional[str] = Form(None),

@@ -10,7 +10,7 @@ from app.parsers.banks.indiana_members_cu import IndianaMembersCUParser
 from app.parsers.banks.forbright import ForbrightBankParser
 from app.parsers.banks.wayne_bank import WayneBankParser
 from app.parsers.banks.first_kansas_bank import FirstKansasBankParser
-from app.parsers.banks.first_service_cu import FirstServiceCUParser
+# from app.parsers.banks.first_service_cu import FirstServiceCUParser
 
 __all__ = [
     "PeopleSouthParser",
@@ -23,6 +23,6 @@ __all__ = [
     "ForbrightBankParser",
     "WayneBankParser",
     "FirstKansasBankParser",
-    "FirstServiceCUParser",
+    # "FirstServiceCUParser",
 ]
 

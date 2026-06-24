@@ -17,6 +17,19 @@ import re
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+import wordsegment
+
+_WORDSEGMENT_LOADED = False
+
+def _ensure_wordsegment():
+    global _WORDSEGMENT_LOADED
+    if not _WORDSEGMENT_LOADED:
+        try:
+            wordsegment.load()
+            _WORDSEGMENT_LOADED = True
+        except Exception:
+            pass
+
 # Current year used to fill in 2-part dates like "Jul 01"
 _CURRENT_YEAR = datetime.now().year
 
@@ -557,3 +570,42 @@ def sum_transaction_totals(transactions: List) -> Dict[str, float]:
         "total_debits": round(total_debits, 2),
         "total_credits": round(total_credits, 2),
     }
+
+def fix_squashed_description(desc: str) -> str:
+    """
+    Intelligently un-squash joined words like 'MCADEPOSIT' -> 'MCA DEPOSIT'.
+    Also ensures letters and numbers are separated (e.g. POSDEB1652 -> POS DEB 1652).
+    """
+    if not desc:
+        return ""
+        
+    _ensure_wordsegment()
+    if not _WORDSEGMENT_LOADED:
+        return desc
+    
+    # 1. Separate numbers from letters
+    desc = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', desc)
+    desc = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', desc)
+    
+    # 2. Segment the alphabetic parts
+    parts = []
+    for chunk in desc.split():
+        # Only segment if it's purely alphabetical and reasonably long
+        if chunk.isalpha() and len(chunk) > 4:
+            segmented = wordsegment.segment(chunk)
+            parts.extend(segmented)
+        else:
+            parts.append(chunk)
+            
+    return " ".join(parts).upper()
+
+def normalize_descriptions(transactions: List) -> List:
+    """
+    Apply word segmentation to all transaction descriptions globally.
+    """
+    for txn in transactions:
+        if hasattr(txn, "description") and txn.description:
+            txn.description = fix_squashed_description(txn.description)
+        elif isinstance(txn, dict) and txn.get("description"):
+            txn["description"] = fix_squashed_description(txn["description"])
+    return transactions

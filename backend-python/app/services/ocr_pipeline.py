@@ -40,6 +40,7 @@ from app.services.postprocessor import (
     detect_statement_period,
     deduplicate_transactions,
     sum_transaction_totals,
+    normalize_descriptions,
 )
 from app.services.statement_templates import (
     lookup_template_by_bank_key,
@@ -106,6 +107,7 @@ def _statement_result(
     debug_extraction: Optional[Dict] = None,
 ) -> StatementResult:
     transactions = deduplicate_transactions(transactions)
+    transactions = normalize_descriptions(transactions)
     _add_reconciliation_warnings(transactions, warnings)
     totals = sum_transaction_totals(transactions)
     meta = extract_statement_metadata(rows, transactions, header_idx=header_idx)
@@ -155,6 +157,7 @@ def _statement_result_from_parse_result(
         transactions = parse_result.transactions
     else:
         transactions = deduplicate_transactions(parse_result.transactions)
+    transactions = normalize_descriptions(transactions)
     parser_debug = dict(debug_extraction or {})
     if parse_result.checks_register:
         parser_debug["checks_register"] = parse_result.checks_register

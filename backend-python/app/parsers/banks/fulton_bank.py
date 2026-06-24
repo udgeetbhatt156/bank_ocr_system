@@ -95,10 +95,15 @@ _SKIP_PATTERNS = [
     re.compile(r"^Date\s+Description\s+Deposits", re.IGNORECASE),
     re.compile(r"^fultonbank\.com", re.IGNORECASE),
     re.compile(r"^Fulton\s+Bank,?\s*N\.?A", re.IGNORECASE),
-    re.compile(r"^DEPSTMT", re.IGNORECASE),
-    re.compile(r"^Deposit\s+Statement$", re.IGNORECASE),
-    re.compile(r"^Rev\.\s+\d{2}/\d{2}/\d{4}", re.IGNORECASE),
     re.compile(r"^RECONCILEMENT\s+FORM", re.IGNORECASE),
+]
+
+# Patterns that suspend transaction parsing until the next Activity header
+_SUSPEND_PATTERNS = [
+    re.compile(r"^RECONCILEMENT\s+FORM", re.IGNORECASE),
+    re.compile(r"^fultonbank\.com", re.IGNORECASE),
+    re.compile(r"^Fulton\s+Bank,?\s*N\.?A", re.IGNORECASE),
+    re.compile(r"^DEPSTMT", re.IGNORECASE),
 ]
 
 # Section boundaries — stop parsing Account Activity at these
@@ -282,6 +287,16 @@ class FultonBankParser(BaseParser):
             # Stop at non-transaction sections
             if _is_stop_section(stripped):
                 break
+
+            # Suspend parsing for footers/reconcilement pages
+            is_suspended = False
+            for pat in _SUSPEND_PATTERNS:
+                if pat.search(stripped):
+                    is_suspended = True
+                    break
+            if is_suspended:
+                in_activity = False
+                continue
 
             # Skip page furniture
             if _is_skip_line(stripped):

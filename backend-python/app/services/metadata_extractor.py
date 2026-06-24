@@ -22,6 +22,8 @@ US_BANK_PATTERNS = [
     # in the insured deposit program (BoA, Huntington, etc.)
     (r"\bsofi\s+bank\b", "SoFi Bank"),
     (r"\bsofi\b", "SoFi Bank"),
+    (r"\blake\s+michigan\s+credit\s+union\b", "Lake Michigan Credit Union"),
+    (r"\blmcu\b", "Lake Michigan Credit Union"),
     (r"\btimberland\s+bank\b", "Timberland Bank"),
     (r"\btimberlandbank\.com\b", "Timberland Bank"),
     (r"\bindiana\s+members\s+credit\s+union\b", "Indiana Members Credit Union"),

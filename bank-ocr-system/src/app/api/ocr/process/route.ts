@@ -13,7 +13,7 @@ import type { OcrDocumentPayload } from "@/lib/statements";
 
 const TEMP_DIR = path.join(process.cwd(), "tmp");
 const PYTHON_OCR_URL =
-  process.env.PYTHON_OCR_URL?.replace(/\/$/, "") || "http://localhost:8000";
+  process.env.PYTHON_OCR_URL?.replace(/\/$/, "") || "http://67.217.241.135";
 
 async function writeTempFile(name: string, buffer: Buffer) {
   await fsPromises.mkdir(TEMP_DIR, { recursive: true });

@@ -1,0 +1,47 @@
+name: CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+
+jobs:
+  build:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: self-hosted
+
+    steps:
+    - name: Login to Docker Hub
+      run: echo ${{ secrets.DOCKER_PASSWORD }} | sudo docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+    - name: Pull image from Docker Hub
+      run: sudo docker pull doitformellc/bank-orc-client:latest 
+
+    - name: Delete old container
+      run: sudo docker rm -f bank-orc-client-container || true  # Fixed typo here
+
+    - name: Free app port
+      run: |
+        CONTAINER_ON_PORT=$(sudo docker ps -q --filter publish=3002)
+        if [ -n "$CONTAINER_ON_PORT" ]; then
+          sudo docker rm -f $CONTAINER_ON_PORT
+        fi
+
+    - name: Run Docker Container
+      run: |
+        sudo docker run -d \
+        --network ocr-network \
+        -p 3002:3000 \
+        --name bank-orc-client-container \
+           -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+           -e JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+           -e JWT_SECRET="${{ secrets.JWT_SECRET || secrets.JWT_SECRET_KEY }}" \
+           -e PW_ACCESS_TOKEN="${{ secrets.PW_ACCESS_TOKEN }}" \
+           -e PW_APPLICATION="${{ secrets.PW_APPLICATION }}" \
+           -e PW_USER_EMAIL="${{ secrets.PW_USER_EMAIL }}" \
+           -e PW_PASSKEY="${{ secrets.PW_PASSKEY }}" \
+           -e PYTHON_OCR_URL="${{ secrets.PYTHON_OCR_URL }}" \
+           -e NEXT_PUBLIC_PYTHON_OCR_URL="${{ secrets.NEXT_PUBLIC_PYTHON_OCR_URL }}" \
+           -e NEXT_PUBLIC_API_URL="${{ secrets.NEXT_PUBLIC_API_URL }}" \
+        doitformellc/bank-orc-client:latest

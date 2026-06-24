@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import ocr, developer
+from app.routers import ocr
 
 # Configure logging
 logging.basicConfig(
@@ -31,9 +31,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register routers
+# Register OCR router
 app.include_router(ocr.router, prefix="/api/ocr", tags=["OCR"])
-app.include_router(developer.router, prefix="/api/developer", tags=["Developer OCR"])
 
 @app.get("/")
 def health_check():

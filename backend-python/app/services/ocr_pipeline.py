@@ -151,7 +151,10 @@ def _statement_result_from_parse_result(
     header_idx: Optional[int] = None,
     debug_extraction: Optional[Dict] = None,
 ) -> StatementResult:
-    transactions = deduplicate_transactions(parse_result.transactions)
+    if getattr(parse_result, "skip_deduplication", False):
+        transactions = parse_result.transactions
+    else:
+        transactions = deduplicate_transactions(parse_result.transactions)
     parser_debug = dict(debug_extraction or {})
     if parse_result.checks_register:
         parser_debug["checks_register"] = parse_result.checks_register
@@ -1136,8 +1139,12 @@ def process_single_statement(
 
     file_name_lower = file_path.name.lower()
     is_wayne = (bank_hint and bank_hint.lower() in ["wayne", "waynebank", "wayne_bank"]) or "wayne" in file_name_lower
+    is_lmcu = (bank_hint and bank_hint.lower() in ["lmcu", "lake_michigan_credit_union", "lake michigan credit union"]) or "lmcu" in file_name_lower
+    is_exchange_bank = (bank_hint and bank_hint.lower() in ["exchange_bank", "exchange bank"]) or "exchange bank" in file_name_lower
 
-    if is_image or is_wayne:
+    if is_lmcu or is_exchange_bank:
+        pdf_type = "digital"
+    elif is_image or is_wayne:
         pdf_type = "scanned"
     else:
         pdf_type = detect_pdf_type(file_path)

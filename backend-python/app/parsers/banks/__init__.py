@@ -10,6 +10,9 @@ from app.parsers.banks.indiana_members_cu import IndianaMembersCUParser
 from app.parsers.banks.forbright import ForbrightBankParser
 from app.parsers.banks.wayne_bank import WayneBankParser
 from app.parsers.banks.first_kansas_bank import FirstKansasBankParser
+from app.parsers.banks.lake_michigan_credit_union import LakeMichiganCreditUnionParser
+from app.parsers.banks.mercury_bank import MercuryBankParser
+from app.parsers.banks.exchange_bank import ExchangeBankParser
 # from app.parsers.banks.first_service_cu import FirstServiceCUParser
 
 __all__ = [
@@ -23,6 +26,9 @@ __all__ = [
     "ForbrightBankParser",
     "WayneBankParser",
     "FirstKansasBankParser",
+    "LakeMichiganCreditUnionParser",
+    "MercuryBankParser",
+    "ExchangeBankParser",
     # "FirstServiceCUParser",
 ]
 

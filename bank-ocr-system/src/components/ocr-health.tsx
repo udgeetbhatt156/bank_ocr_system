@@ -216,8 +216,8 @@ export function OcrHealth() {
 
   const PYTHON_OCR_URL =
     typeof window !== "undefined"
-      ? (process.env.NEXT_PUBLIC_PYTHON_OCR_URL || "http://localhost:8000")
-      : "http://localhost:8000";
+      ? (process.env.NEXT_PUBLIC_PYTHON_OCR_URL || "http://67.217.241.135/backend")
+      : "http://67.217.241.135/backend";
 
   const checkHealth = useCallback(async () => {
     setHealth((prev) => ({ ...prev, status: "checking" }));

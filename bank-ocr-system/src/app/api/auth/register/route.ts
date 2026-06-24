@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 
 import { prisma } from "@/lib/prisma";
 import { signToken } from "@/lib/jwt";
+import { isSecureRequest } from "@/lib/auth-cookies";
 
 export async function POST(request: Request) {
   try {
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
       httpOnly: true,
       path: "/",
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isSecureRequest(request),
       maxAge: 60 * 60 * 24 * 7,
     });
 

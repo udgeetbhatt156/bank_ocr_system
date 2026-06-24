@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-export async function POST() {
+import { isSecureRequest } from "@/lib/auth-cookies";
+
+export async function POST(request: Request) {
   const response = NextResponse.json({ success: true });
   response.cookies.set({
     name: "bankocr_session",
@@ -9,7 +11,7 @@ export async function POST() {
     maxAge: 0,
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureRequest(request),
   });
   return response;
 }

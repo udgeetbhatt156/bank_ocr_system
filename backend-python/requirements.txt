@@ -3,6 +3,7 @@ fastapi==0.136.1
 uvicorn==0.47.0
 python-multipart==0.0.29
 python-dotenv==1.2.2
+PyJWT==2.10.1
 PyMuPDF==1.27.2.3
 pdfplumber==0.11.9
 pdf2image==1.17.0

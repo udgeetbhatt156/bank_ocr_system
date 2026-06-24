@@ -17,7 +17,7 @@ export default function UploadPage() {
     useOcrStore();
   const router = useRouter();
 
-  const pendingCount   = files.filter((f) => f.status === "pending").length;
+  const pendingCount = files.filter((f) => f.status === "pending").length;
   const duplicateCount = files.filter((f) => f.status === "duplicate").length;
   const hasResults = documents.length > 0;
 
@@ -115,31 +115,35 @@ export default function UploadPage() {
               </Button>
             )}
             <div>
-            
-        <Select value={selectedBank} onValueChange={setSelectedBank}>
-        <SelectTrigger id="bank-type-filter" className="w-[180px] h-9">
-          <SelectValue placeholder="Auto Detect" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Auto Detect</SelectItem>
-          <SelectItem value="bancfirst">BancFirst</SelectItem>
-          <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
-          <SelectItem value="citibank">Citi Bank</SelectItem>
-          <SelectItem value="chase">JPMorgan Chase</SelectItem>
-          <SelectItem value="bank-of-america">Bank Of America</SelectItem>
-          <SelectItem value="sofi-bank">SoFi Bank</SelectItem>
-          <SelectItem value="navy-federal">Navy Federal Credit Union</SelectItem>
-          <SelectItem value="wells-fargo">Wells Fargo</SelectItem>
-          <SelectItem value="palmetto-state-bank">Palmetto State Bank</SelectItem>
-          <SelectItem value="washington-trust-bank">Washington Trust Bank</SelectItem>
-          <SelectItem value="timberland-bank">Timberland Bank</SelectItem>
-          <SelectItem value="imcu">Indiana Members Credit Union (IMCU)</SelectItem>
-          <SelectItem value="forbright">Forbright Bank</SelectItem>
-          <SelectItem value="first-kansas-bank">First Kansas Bank</SelectItem>
-          <SelectItem value="wayne">Wayne Bank</SelectItem>
-          <SelectItem value="first-service-cu">First Service Credit Union</SelectItem>
-        </SelectContent>
-        </Select>
+
+              <Select value={selectedBank} onValueChange={setSelectedBank}>
+                <SelectTrigger id="bank-type-filter" className="w-[180px] h-9">
+                  <SelectValue placeholder="Auto Detect" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Auto Detect</SelectItem>
+                  <SelectItem value="bancfirst">BancFirst</SelectItem>
+                  <SelectItem value="peoplesouth-bank">PeopleSouth Bank</SelectItem>
+                  <SelectItem value="citibank">Citi Bank</SelectItem>
+                  <SelectItem value="chase">JPMorgan Chase</SelectItem>
+                  <SelectItem value="bank-of-america">Bank Of America</SelectItem>
+                  <SelectItem value="sofi-bank">SoFi Bank</SelectItem>
+                  <SelectItem value="navy-federal">Navy Federal Credit Union</SelectItem>
+                  <SelectItem value="wells-fargo">Wells Fargo</SelectItem>
+                  <SelectItem value="palmetto-state-bank">Palmetto State Bank</SelectItem>
+                  <SelectItem value="washington-trust-bank">Washington Trust Bank</SelectItem>
+                  <SelectItem value="timberland-bank">Timberland Bank</SelectItem>
+                  <SelectItem value="imcu">Indiana Members Credit Union (IMCU)</SelectItem>
+                  <SelectItem value="forbright">Forbright Bank</SelectItem>
+                  <SelectItem value="first-kansas-bank">First Kansas Bank</SelectItem>
+                  <SelectItem value="wayne">Wayne Bank</SelectItem>
+                  <SelectItem value="first-service-cu">First Service Credit Union</SelectItem>
+                  <SelectItem value="stellar">Stellar Bank</SelectItem>
+                  <SelectItem value="lmcu">Lake Michigan Credit Union</SelectItem>
+                  <SelectItem value="mercury_bank">Mercury Bank</SelectItem>
+                  <SelectItem value="exchange_bank">Exchange Bank</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button
               onClick={handleProcess}

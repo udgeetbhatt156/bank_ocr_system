@@ -25,6 +25,7 @@ export async function getAuthUserId(): Promise<string | null> {
 
 export async function getAuthUser(): Promise<AuthUser | null> {
   const userId = await getAuthUserId();
+  console.log("userId from get auth user:", userId)
   if (!userId) return null;
 
   try {

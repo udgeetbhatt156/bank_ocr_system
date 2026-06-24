@@ -67,6 +67,7 @@ model Transaction {
   description String
   debit       Decimal?    @db.Decimal(14, 2)
   credit      Decimal?    @db.Decimal(14, 2)
+  credit_type CreditType? @default("-")
   balance     Decimal?    @db.Decimal(14, 2)
   category    String?
   confidence  Float?
@@ -78,4 +79,9 @@ model Transaction {
 
   @@index([statementId])
   @@index([accountId])
+}
+
+enum CreditType {
+  Revenue
+  Deduction
 }

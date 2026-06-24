@@ -1,7 +1,7 @@
 /* Centralized API client for all frontend calls */
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
-
+// const BASE = process.env.NEXT_PUBLIC_PYTHON_OCR_URL || "";
 // Types 
 
 export interface User {

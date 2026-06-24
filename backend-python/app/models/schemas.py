@@ -12,6 +12,7 @@ class Transaction(BaseModel):
     description: str
     debit: Optional[float] = None
     credit: Optional[float] = None
+    credit_type: Optional[str] = None
     balance: Optional[float] = None
 
 

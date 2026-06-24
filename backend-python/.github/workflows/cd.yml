@@ -1,0 +1,60 @@
+name: CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: self-hosted
+    env:
+      IMAGE_NAME: doitformellc/bank-orc-server
+      CONTAINER_NAME: bank-orc-server-container
+      DOCKER_NETWORK: ocr-network
+      HOST_PORT: 3003
+      CONTAINER_PORT: 8000
+      UPLOAD_DIR: uploads
+      HOST: 0.0.0.0
+      PORT: 8000
+
+    steps:
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Pull image from Docker Hub
+        run: sudo docker pull "$IMAGE_NAME:latest"
+
+      - name: Ensure Docker network exists
+        run: sudo docker network inspect "$DOCKER_NETWORK" >/dev/null 2>&1 || sudo docker network create "$DOCKER_NETWORK"
+
+      - name: Delete old container
+        run: sudo docker rm -f "$CONTAINER_NAME" || true
+
+      - name: Run Docker container
+        run: |
+          sudo docker run -d \
+            --restart unless-stopped \
+            --network "$DOCKER_NETWORK" \
+            -p "$HOST_PORT:$CONTAINER_PORT" \
+            -e UPLOAD_DIR="$UPLOAD_DIR" \
+            -e HOST="$HOST" \
+            -e PORT="$PORT" \
+            -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            -e CORS_ORIGINS="${{ vars.CORS_ORIGINS }}" \
+            -v "$CONTAINER_NAME-uploads:/app/uploads" \
+            --name "$CONTAINER_NAME" \
+            "$IMAGE_NAME:latest"
+
+      - name: Health check
+        run: |
+          for i in {1..30}; do
+            if sudo docker exec "$CONTAINER_NAME" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          sudo docker logs "$CONTAINER_NAME" --tail 100
+          exit 1

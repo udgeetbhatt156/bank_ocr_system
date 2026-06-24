@@ -1,5 +1,5 @@
 import axios from "axios";
-import FormData from "form-data";
+import NodeFormData from "form-data";
 import { NextResponse } from "next/server";
 
 import { signToken } from "@/lib/jwt";
@@ -7,13 +7,10 @@ import type { OcrDocumentPayload } from "@/lib/statements";
 
 //Config
 const PYTHON_OCR_URL =
-  process.env.PYTHON_OCR_URL?.replace(/\/$/, "") || "http://localhost:8000";
-
+  process.env.PYTHON_OCR_URL?.replace(/\/$/, "") || "http://67.217.241.135/backend";
 const ALLOWED_DEVELOPER_EMAIL = process.env.PW_USER_EMAIL?.trim() || "developer@example.com";
 const ALLOWED_DEVELOPER_APP = process.env.PW_APPLICATION?.trim() || "ocr_process_api";
 const ALLOWED_PASSKEY = process.env.PW_PASSKEY?.trim();
-
-// Helpers
 
 /** Validates required headers. Returns an error string or null if all good. */
 function validateHeaders(
@@ -42,10 +39,10 @@ function validateHeaders(
 
 /** Reads files from a FormData object and builds the upstream form without disk I/O. */
 async function buildUpstreamForm(
-  formData: FormData
-): Promise<FormData> {
+  formData: globalThis.FormData
+): Promise<NodeFormData> {
   const files = formData.getAll("files");
-  const upstreamForm = new FormData();
+  const upstreamForm = new NodeFormData();
 
   for (const file of files) {
     if (!(file instanceof File)) continue;
@@ -53,7 +50,7 @@ async function buildUpstreamForm(
     const fileName = file.name || `document-${Date.now()}.bin`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Pass buffer directly — no need for disk I/O
+    // Pass buffer directly - no need for disk I/O
     upstreamForm.append("files", buffer, { filename: fileName });
   }
 
@@ -84,12 +81,12 @@ export async function POST(request: Request) {
   try {
     const upstreamForm = await buildUpstreamForm(formData);
 
-    const token = await signToken({
-      sub: "developer_api_user_ocr",
-      email: email!,
-      name: appName!,
-      passKey: passkey!,
-    });
+    const accessToken = await signToken({
+        sub: "developer_api_user_ocr",
+        email: email!,
+        name: appName!,
+        passKey: passkey!,
+      });
 
     const response = await axios.post(
       `${PYTHON_OCR_URL}/api/ocr/process-with-duplicate-check`,
@@ -97,10 +94,10 @@ export async function POST(request: Request) {
       {
         headers: {
           ...upstreamForm.getHeaders(),
-          "X-PW-AccessToken": token,
+          "X-PW-AccessToken": accessToken,
           "X-PW-Application": appName!,
           "X-PW-UserEmail": email!,
-          "X-PW-PassKey": passkey!,
+          ...(passkey ? { "X-PW-PassKey": passkey } : {}),
         },
       }
     );

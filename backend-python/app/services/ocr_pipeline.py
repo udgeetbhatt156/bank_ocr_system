@@ -1144,8 +1144,9 @@ def process_single_statement(
     is_wayne = (bank_hint and bank_hint.lower() in ["wayne", "waynebank", "wayne_bank"]) or "wayne" in file_name_lower
     is_lmcu = (bank_hint and bank_hint.lower() in ["lmcu", "lake_michigan_credit_union", "lake michigan credit union"]) or "lmcu" in file_name_lower
     is_exchange_bank = (bank_hint and bank_hint.lower() in ["exchange_bank", "exchange bank"]) or "exchange bank" in file_name_lower
+    is_fulton_bank = (bank_hint and bank_hint.lower() in ["fulton-bank", "fulton_bank", "fulton bank"]) or "fulton bank" in file_name_lower
 
-    if is_lmcu or is_exchange_bank:
+    if is_lmcu or is_exchange_bank or is_fulton_bank:
         pdf_type = "digital"
     elif is_image or is_wayne:
         pdf_type = "scanned"

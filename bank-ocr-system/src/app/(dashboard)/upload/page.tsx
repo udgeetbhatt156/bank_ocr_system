@@ -142,6 +142,7 @@ export default function UploadPage() {
                   <SelectItem value="lmcu">Lake Michigan Credit Union</SelectItem>
                   <SelectItem value="mercury_bank">Mercury Bank</SelectItem>
                   <SelectItem value="exchange_bank">Exchange Bank</SelectItem>
+                  <SelectItem value="fulton-bank">Fulton Bank</SelectItem>
                 </SelectContent>
               </Select>
             </div>

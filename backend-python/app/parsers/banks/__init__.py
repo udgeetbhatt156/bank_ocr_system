@@ -13,6 +13,7 @@ from app.parsers.banks.first_kansas_bank import FirstKansasBankParser
 from app.parsers.banks.lake_michigan_credit_union import LakeMichiganCreditUnionParser
 from app.parsers.banks.mercury_bank import MercuryBankParser
 from app.parsers.banks.exchange_bank import ExchangeBankParser
+from app.parsers.banks.fulton_bank import FultonBankParser
 # from app.parsers.banks.first_service_cu import FirstServiceCUParser
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "LakeMichiganCreditUnionParser",
     "MercuryBankParser",
     "ExchangeBankParser",
+    "FultonBankParser",
     # "FirstServiceCUParser",
 ]
 

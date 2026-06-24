@@ -615,6 +615,32 @@ TEMPLATES: List[StatementTemplate] = [
         stop_keywords=[],
         sample_files=["Exchange Bank.pdf"],
     ),
+    StatementTemplate(
+        template_id="fulton_bank_business_checking_v1",
+        bank_name="Fulton Bank, N.A.",
+        layout_family="multiline_balance_delta",
+        parser_format="fulton_bank",
+        bank_patterns=[
+            "fulton bank",
+            "fultonbank.com",
+            "deposit support pm",
+            "depstmt",
+            "p.o. box 4887",
+        ],
+        header_keywords=[
+            "fulton bank",
+            "deposits/credits",
+            "checks/debits",
+            "account activity",
+            "business checking",
+        ],
+        amount_rules={
+            "balance_delta_classification": True,
+            "negative_balance_allowed": True,
+        },
+        stop_keywords=["check summary", "interest earned information"],
+        sample_files=["Fulton bank.pdf"],
+    ),
     # Generic fallback templates
     StatementTemplate(
         template_id="generic_additions_subtractions_v1",
@@ -673,6 +699,8 @@ BANK_KEY_MAP: Dict[str, List[str]] = {
     "lake-michigan-credit-union": ["lake_michigan_credit_union"],
     "mercury_bank":      ["mercury_bank_v1"],
     "exchange_bank":     ["exchange_bank_comm_ckg"],
+    "fulton-bank":       ["fulton_bank_business_checking_v1"],
+    "fulton_bank":       ["fulton_bank_business_checking_v1"],
 }
 
 # Fast O(1) lookup index: template_id → StatementTemplate
